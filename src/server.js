@@ -2,14 +2,17 @@
  * 面板服务：静态页面 + JSON API + SSE 实时推送。
  */
 import http from 'node:http';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { readFile } from 'node:fs/promises';
-import { writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
-import { join, extname, normalize, relative } from 'node:path';
+import { writeFileSync, unlinkSync, mkdirSync, statSync } from 'node:fs';
+import { join, dirname, extname, normalize, relative } from 'node:path';
 import { config } from './config.js';
 import { openStore, localDay, monthStart } from './store.js';
 import { TrafficRelay } from './relay.js';
 import { readSettings, writeSettings, computeAlerts } from './settings.js';
+import { Router } from './router.js';
+import { findV2RayNExe, readRoutingMode } from './v2rayn.js';
 import { startBall, stopBall } from './ballcontrol.js';
 import {
   readSystemProxy,
@@ -21,12 +24,48 @@ import {
 } from './systemproxy.js';
 
 const store = openStore(config.dbFile);
+const router = new Router();
 const relay = new TrafficRelay({
   port: config.relayPort,
   upstreamHost: config.upstreamHost,
   upstreamPort: config.upstreamPort,
   maxConnections: config.maxConnections,
+  decideRoute: (host) => router.decide(host),
 });
+
+const runAsync = promisify(execFile);
+let geositeResolved = '';
+
+/** 定位 geosite.dat：设置里的路径 > 环境变量 > 项目 data/ > V2RayN 安装目录 */
+async function resolveGeositePath(settings) {
+  const candidates = [];
+  if (settings.routing?.geositePath) candidates.push(settings.routing.geositePath);
+  if (process.env.GEOSITE_PATH) candidates.push(process.env.GEOSITE_PATH);
+  candidates.push(join(config.root, 'data', 'geosite.dat'));
+  const exe = await findV2RayNExe();
+  if (exe) candidates.push(join(dirname(exe), 'bin', 'geosite.dat'));
+
+  for (const file of candidates) {
+    try {
+      if (file && statSync(file).isFile()) return file;
+    } catch {
+      /* 继续找下一个 */
+    }
+  }
+  return '';
+}
+
+async function configureRouter(settings) {
+  const file = await resolveGeositePath(settings);
+  geositeResolved = file;
+  const status = router.configure({ ...settings, routing: { ...settings.routing, geositePath: file } });
+  return status;
+}
+
+/** 启用面板分流后，系统代理不再做域名例外：全部流量进面板，才能分清代理/直连 */
+function effectiveBypass(settings) {
+  return settings.routing?.enabled ? [] : settings.bypassDomains;
+}
 
 const sseClients = new Set();
 const startedAt = Date.now();
@@ -125,6 +164,7 @@ async function buildOverview() {
         reachable,
       },
       v2rayN,
+      routingMode: await readRoutingMode(),
       proxy: {
         ...proxy,
         captured,
@@ -134,6 +174,9 @@ async function buildOverview() {
     },
     month: { label: month.slice(0, 7), ...monthTotals },
     today: { label: today, ...todayTotals },
+    directMonth: { label: month.slice(0, 7), ...store.totals(month, 'direct') },
+    directToday: { label: today, ...store.totals(today, 'direct') },
+    routing: { ...router.status(), geositePath: geositeResolved },
     series: zeroFillSeries(store.series(store.since(30)), 30),
     topMonth: store.top(month, 60),
     topToday: store.top(today, 60),
@@ -218,6 +261,13 @@ const server = http.createServer(async (req, res) => {  const url = new URL(req.
       });
     }
 
+    // 调试：给定域名看会走直连还是代理
+    if (pathname === '/api/route' && req.method === 'GET') {
+      const host = (url.searchParams.get('host') ?? '').trim();
+      if (!host) return json(res, { ok: false, error: 'host 必填' }, 400);
+      return json(res, { ok: true, host, route: router.decide(host), routing: { ...router.status(), geositePath: geositeResolved } });
+    }
+
     if (pathname === '/api/settings' && req.method === 'GET') {
       return json(res, { ok: true, settings: readSettings(store) });
     }
@@ -229,12 +279,13 @@ const server = http.createServer(async (req, res) => {  const url = new URL(req.
         // 立即生效，不必等看护进程下一轮检查
         if (settings.ballEnabled) startBall();
         else stopBall();
-        // 直连例外变了就重建系统代理的跳过列表（不改 ProxyServer）
-        if (body.bypassDomains !== undefined && store.meta.get('proxy.original')) {
-          await updateProxyOverride(store, settings.bypassDomains).catch(() => {});
+        const routingStatus = await configureRouter(settings);
+        // 分流开关或例外列表变了，就重写系统代理跳过列表（立即生效）
+        if ((body.bypassDomains !== undefined || body.routing !== undefined) && store.meta.get('proxy.original')) {
+          await updateProxyOverride(store, effectiveBypass(settings)).catch(() => {});
         }
         broadcast('settings', settings);
-        return json(res, { ok: true, settings });
+        return json(res, { ok: true, settings, routing: { ...routingStatus, geositePath: geositeResolved } });
       } catch (err) {
         return json(res, { ok: false, error: err.message }, 400);
       }
@@ -288,7 +339,7 @@ const server = http.createServer(async (req, res) => {  const url = new URL(req.
       const body = await readBody(req);
       if (body.action === 'capture') {
         if (!relay.running) await relay.start();
-        const result = await captureSystemProxy(store, config.relayPort, readSettings(store).bypassDomains);
+        const result = await captureSystemProxy(store, config.relayPort, effectiveBypass(readSettings(store)));
         broadcast('status', { proxy: 'captured' });
         return json(res, { ok: true, ...result });
       }
@@ -315,6 +366,19 @@ const server = http.createServer(async (req, res) => {  const url = new URL(req.
 });
 
 async function main() {
+  // 先加载分流规则，再开始接流量
+  try {
+    const status = await configureRouter(readSettings(store));
+    if (status.enabled) {
+      console.log(`分流: 已启用 (geosite=${geositeResolved || '未找到'})`);
+      if (status.error) console.error(`[router] ${status.error}`);
+    } else {
+      console.log('分流: 已关闭（全部走 V2RayN）');
+    }
+  } catch (err) {
+    console.error(`[router] 初始化失败：${err.message}`);
+  }
+
   try {
     await relay.start();
   } catch (err) {
@@ -335,7 +399,7 @@ async function main() {
       // 等 V2RayN 自己先把系统代理写好，再接管，避免刚起来就被它覆盖
       setTimeout(async () => {
         try {
-          await captureSystemProxy(store, config.relayPort, readSettings(store).bypassDomains);
+          await captureSystemProxy(store, config.relayPort, effectiveBypass(readSettings(store)));
           console.log('已自动接管系统代理（面板退出时还原）');
         } catch (err) {
           console.error(`[proxy] 自动接管失败：${err.message}`);
@@ -365,7 +429,7 @@ function startProxyGuard() {
     try {
       const proxy = await readSystemProxy();
       if (proxy.enabled && proxy.server === upstream) {
-        await captureSystemProxy(store, config.relayPort, readSettings(store).bypassDomains);
+        await captureSystemProxy(store, config.relayPort, effectiveBypass(readSettings(store)));
         console.log('[guard] 系统代理被改回 V2RayN，已重新接管');
       }
     } catch {

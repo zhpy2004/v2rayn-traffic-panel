@@ -185,6 +185,32 @@ function socksConnectUpstream({ host, port, upstreamHost, upstreamPort, timeoutM
   });
 }
 
+/** 直连：自己解析 DNS 并连目标（不走 V2RayN） */
+function directConnect(host, port, timeoutMs = 10_000) {
+  return new Promise((resolve, reject) => {
+    const sock = net.connect({ host, port });
+    let settled = false;
+    let timer = null;
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      sock.destroy();
+      reject(err);
+    };
+    const onError = (err) => fail(err);
+    timer = setTimeout(() => fail(new Error('direct connect timeout')), timeoutMs);
+    sock.once('error', onError);
+    sock.once('connect', () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      sock.off('error', onError);
+      resolve(sock);
+    });
+  });
+}
+
 function relayPipe(src, dst, onBytes) {
   src.on('data', (chunk) => {
     onBytes(chunk.length);
@@ -199,12 +225,13 @@ function relayPipe(src, dst, onBytes) {
 }
 
 export class TrafficRelay extends EventEmitter {
-  constructor({ port, upstreamHost, upstreamPort, maxConnections = 512 }) {
+  constructor({ port, upstreamHost, upstreamPort, maxConnections = 512, decideRoute }) {
     super();
     this.port = port;
     this.upstreamHost = upstreamHost;
     this.upstreamPort = upstreamPort;
     this.maxConnections = maxConnections;
+    this.decideRoute = typeof decideRoute === 'function' ? decideRoute : () => 'proxy';
     this.server = null;
     this.running = false;
     this.active = 0;
@@ -280,24 +307,56 @@ export class TrafficRelay extends EventEmitter {
       host: '',
       port: 0,
       proto: 'unknown',
+      route: 'proxy',
       up: 0,
       down: 0,
       done: false,
     };
     let upstream = null;
+    let hs = null;
 
     try {
       const reader = new SockReader(client);
       const first = await reader.readExactly(1);
-      const handshake = first[0] === 0x05
+      hs = first[0] === 0x05
         ? await this.handshakeSocks5(client, reader)
         : await this.handshakeHttp(client, reader, first);
 
-      upstream = handshake.upstream;
-      record.host = handshake.host;
-      record.port = handshake.port;
-      record.proto = handshake.proto;
+      record.host = hs.host;
+      record.port = hs.port;
+      record.proto = hs.proto;
+
+      // 面板内分流：直连自己拨号，否则交给 V2RayN
+      let route = this.decideRoute(hs.host, hs.port);
+      try {
+        upstream = route === 'direct'
+          ? await directConnect(hs.host, hs.port)
+          : await socksConnectUpstream({
+            host: hs.host,
+            port: hs.port,
+            upstreamHost: this.upstreamHost,
+            upstreamPort: this.upstreamPort,
+          });
+      } catch (err) {
+        if (route !== 'direct') throw err;
+        this.emit('debug', { message: `direct failed for ${hs.host}: ${err.message}; fallback to proxy` });
+        route = 'proxy';
+        upstream = await socksConnectUpstream({
+          host: hs.host,
+          port: hs.port,
+          upstreamHost: this.upstreamHost,
+          upstreamPort: this.upstreamPort,
+        });
+      }
+      record.route = route;
       this.sockets.add(upstream);
+
+      // 连通后再回握手成功
+      if (hs.kind === 'socks5') {
+        client.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
+      } else if (hs.kind === 'connect') {
+        client.write('HTTP/1.1 200 Connection Established\r\nProxy-Agent: v2rayn-traffic-panel\r\n\r\n');
+      }
 
       client.setTimeout(IDLE_TIMEOUT_MS, () => {
         client.destroy();
@@ -315,11 +374,11 @@ export class TrafficRelay extends EventEmitter {
         this.tickUp += leftover.length;
         this.totalUp += leftover.length;
       }
-      if (handshake.preface?.length) {
-        upstream.write(handshake.preface);
-        record.up += handshake.preface.length;
-        this.tickUp += handshake.preface.length;
-        this.totalUp += handshake.preface.length;
+      if (hs.preface?.length) {
+        upstream.write(hs.preface);
+        record.up += hs.preface.length;
+        this.tickUp += hs.preface.length;
+        this.totalUp += hs.preface.length;
       }
 
       relayPipe(client, upstream, (n) => {
@@ -340,6 +399,12 @@ export class TrafficRelay extends EventEmitter {
       upstream.once('error', done);
     } catch (err) {
       this.emit('debug', { message: err instanceof Error ? err.message : String(err), proto: record.proto });
+      try {
+        if (hs?.kind === 'socks5') client.write(Buffer.from([0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
+        else if (hs?.kind === 'connect') client.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+      } catch {
+        /* 客户端已断开 */
+      }
       upstream?.destroy();
       client.destroy();
       this.finish(record, client, upstream);
@@ -368,19 +433,8 @@ export class TrafficRelay extends EventEmitter {
       throw new Error(`unsupported socks command ${cmd}`);
     }
 
-    try {
-      const upstream = await socksConnectUpstream({
-        host,
-        port,
-        upstreamHost: this.upstreamHost,
-        upstreamPort: this.upstreamPort,
-      });
-      client.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
-      return { upstream, host, port, proto: 'socks5' };
-    } catch (err) {
-      client.write(Buffer.from([0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
-      throw err;
-    }
+    // 先不连，交给 handle() 按路由决定直连还是走 V2RayN
+    return { kind: 'socks5', host, port, proto: 'socks5' };
   }
 
   async handshakeHttp(client, reader, firstByte) {
@@ -394,14 +448,7 @@ export class TrafficRelay extends EventEmitter {
 
     if (method === 'CONNECT') {
       const { host, port } = splitHostPort(target, 443);
-      const upstream = await socksConnectUpstream({
-        host,
-        port,
-        upstreamHost: this.upstreamHost,
-        upstreamPort: this.upstreamPort,
-      });
-      client.write('HTTP/1.1 200 Connection Established\r\nProxy-Agent: v2rayn-traffic-panel\r\n\r\n');
-      return { upstream, host, port, proto: 'http-connect' };
+      return { kind: 'connect', host, port, proto: 'http-connect' };
     }
 
     let url;
@@ -412,20 +459,14 @@ export class TrafficRelay extends EventEmitter {
     }
     const host = url.hostname;
     const port = Number(url.port) || (url.protocol === 'https:' ? 443 : 80);
-    const upstream = await socksConnectUpstream({
-      host,
-      port,
-      upstreamHost: this.upstreamHost,
-      upstreamPort: this.upstreamPort,
-    });
 
-    // 绝对 URI 改写成 origin-form，并去掉代理专用头
+    // 绝对 URI 改写成 origin-form，并去掉代理专用头；连接建立后再发给上游
     const lines = header.split('\r\n');
     lines[0] = `${method} ${url.pathname}${url.search} HTTP/1.1`;
     const forwarded = lines
       .filter((line) => !/^proxy-(connection|authorization):/i.test(line))
       .join('\r\n');
     const preface = Buffer.from(forwarded, 'latin1');
-    return { upstream, host, port, proto: 'http', preface };
+    return { kind: 'http', host, port, proto: 'http', preface };
   }
 }

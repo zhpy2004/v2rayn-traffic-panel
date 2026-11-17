@@ -166,11 +166,13 @@ function renderTotals() {
   setText('month-up', fmtBytes(o.month.up));
   setText('month-down', fmtBytes(o.month.down));
   setText('month-conns', String(o.month.conns ?? 0));
+  setText('month-direct', fmtBytes((o.directMonth?.up ?? 0) + (o.directMonth?.down ?? 0)));
 
   setText('today-label', o.today.label);
   setText('today-total', fmtBytes(o.today.up + o.today.down));
   setText('today-up', fmtBytes(o.today.up));
   setText('today-down', fmtBytes(o.today.down));
+  setText('today-direct', fmtBytes((o.directToday?.up ?? 0) + (o.directToday?.down ?? 0)));
 
   setText('live-down', fmtRate(state.live.down));
   setText('live-up', fmtRate(state.live.up));
@@ -248,7 +250,7 @@ function renderRecent() {
     tr.innerHTML = `
       <td class="muted">${fmtClock(row.ts)}</td>
       <td><span class="host">${escapeHtml(row.host)}</span><span class="sub">:${row.port}</span></td>
-      <td class="muted">${escapeHtml(row.proto)}</td>
+      <td class="muted">${escapeHtml(row.proto)}${row.route === 'direct' ? ' <span class="tag">直连</span>' : ''}</td>
       <td class="num up">${fmtBytes(row.up)}</td>
       <td class="num down">${fmtBytes(row.down)}</td>
       <td class="num muted">${fmtDuration(row.dur)}</td>`;

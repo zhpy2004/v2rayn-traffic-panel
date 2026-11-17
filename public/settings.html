@@ -38,6 +38,20 @@
     .actions { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--line); }
     #save-status { font-size: 12px; }
     .footnote { font-size: 11.5px; color: #5f6c85; margin: 4px 2px 0; }
+    .route-grid { display: grid; grid-template-columns: 92px 1fr; gap: 8px 12px; align-items: center; margin: 14px 0 4px; }
+    .route-grid label { font-size: 12.5px; color: var(--muted); }
+    .route-grid input {
+      background: #0d1220; color: var(--text); border: 1px solid var(--line);
+      border-radius: 8px; padding: 6px 9px; font: inherit; font-size: 12.5px; width: 100%;
+    }
+    .route-grid input:focus { outline: 1px solid rgba(91,140,255,.6); }
+    .block-label { display: block; font-size: 12.5px; color: var(--muted); margin: 12px 0 5px; }
+    #routing-direct-domains, #routing-proxy-domains {
+      width: 100%; background: #0d1220; color: #cfe0ff; border: 1px solid var(--line);
+      border-radius: 10px; padding: 9px 11px; font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 12px; line-height: 1.5; resize: vertical;
+    }
+    #routing-direct-domains:focus, #routing-proxy-domains:focus { outline: 1px solid rgba(91,140,255,.6); }
     .footnote code, #appearance { font-family: "Cascadia Mono", Consolas, monospace; }
     .opacity-row { display: flex; align-items: center; gap: 12px; margin: 14px 0 12px; }
     .opacity-row label { font-size: 12.5px; color: var(--muted); width: 58px; }
@@ -132,10 +146,57 @@
     </section>
 
     <section class="card setting-card">
+      <h2>面板分流</h2>
+      <p class="muted">
+        开启后由面板决定每条连接走「直连」还是「交给 V2RayN 走节点」：命中直连的流量不经过 V2RayN，
+        统计也拆成<strong>代理 / 直连</strong>两本账。建议同时在 V2RayN 里把路由设为「全局」，避免二次分流。
+      </p>
+
+      <div class="setting-row">
+        <div>
+          <strong>启用面板分流</strong>
+          <p class="muted" id="routing-status">读取中…</p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="routing-enabled" />
+          <span></span>
+        </label>
+      </div>
+
+      <div class="route-grid">
+        <label for="routing-geosite">geosite.dat</label>
+        <input type="text" id="routing-geosite" placeholder="留空自动查找 V2RayN 的 bin/geosite.dat" />
+        <label for="routing-direct-cats">直连分类</label>
+        <input type="text" id="routing-direct-cats" placeholder="cn, private" />
+        <label for="routing-proxy-cats">强制代理分类</label>
+        <input type="text" id="routing-proxy-cats" placeholder="google" />
+      </div>
+
+      <label class="block-label" for="routing-direct-domains">直连域名（每行一个，支持 *.example.com）</label>
+      <textarea id="routing-direct-domains" rows="6" spellcheck="false"></textarea>
+
+      <label class="block-label" for="routing-proxy-domains">强制代理域名（优先级最高，如 anthropic / cursor）</label>
+      <textarea id="routing-proxy-domains" rows="4" spellcheck="false"></textarea>
+
+      <div class="appearance-actions">
+        <button id="routing-save" class="btn primary">保存分流规则</button>
+        <span id="routing-msg" class="muted"></span>
+      </div>
+      <p class="footnote">
+        规则优先级：强制代理域名 → 直连域名 → 强制代理分类 → 直连分类 → 默认走代理。
+        国内域名来自 V2RayN 自带的 <code>geosite.dat</code>（cn 分类约 9 万条），不用手工维护。
+      </p>
+    </section>
+
+    <section class="card setting-card">
       <h2>直连例外（不走代理）</h2>
       <p class="muted">
         每行一个域名，支持 <code>*.example.com</code> 通配。保存后写进系统代理的跳过列表：
         这些域名直连，<strong>不经过面板、也不消耗节点流量</strong>。
+      </p>
+      <p class="muted" style="color:#ffd98a">
+        注意：上面的「面板分流」开启时本列表<strong>不生效</strong>（所有流量先进面板再分流，
+        这样直连流量也能被统计）；关闭分流后它才用于系统代理跳过。
       </p>
       <textarea id="bypass" spellcheck="false" rows="8"></textarea>
       <div class="appearance-actions">

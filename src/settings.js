@@ -38,6 +38,16 @@ export const DEFAULT_BYPASS = [
   '*.azureedge.net',
 ];
 
+/** 面板内分流规则：面板自己决定直连还是交给 V2RayN（V2RayN 建议设全局） */
+export const DEFAULT_ROUTING = {
+  enabled: true,
+  geositePath: '',
+  directCategories: ['cn', 'private'],
+  proxyCategories: ['google'],
+  directDomains: [...DEFAULT_BYPASS],
+  proxyDomains: ['anthropic.com', 'claude.ai', 'cursor.sh', 'cursor.com', 'cursorapi.com', 'cursor-cdn.com'],
+};
+
 export const DEFAULT_SETTINGS = {
   ballEnabled: true,
   ballOpacity: 0.92,
@@ -45,6 +55,7 @@ export const DEFAULT_SETTINGS = {
   dailyLimit: 0,
   monthlyLimit: 0,
   bypassDomains: DEFAULT_BYPASS,
+  routing: DEFAULT_ROUTING,
 };
 
 const MAX_LIMIT = 10 * 1024 ** 4;
@@ -52,9 +63,9 @@ const KEY = 'settings';
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const DOMAIN_RE = /^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
 
-/** 校验直连例外：去重、转小写、丢弃非法项 */
-export function normalizeBypass(input) {
-  if (!Array.isArray(input)) return [...DEFAULT_BYPASS];
+/** 校验域名列表：去重、转小写、丢弃非法项 */
+export function normalizeBypass(input, fallback = DEFAULT_BYPASS) {
+  if (!Array.isArray(input)) return [...fallback];
   const seen = new Set();
   const out = [];
   for (const raw of input) {
@@ -68,6 +79,41 @@ export function normalizeBypass(input) {
     if (out.length >= 60) break;
   }
   return out;
+}
+
+/** 校验面板分流配置 */
+export function normalizeRouting(input) {
+  const src = input && typeof input === 'object' ? input : {};
+  const base = DEFAULT_ROUTING;
+
+  const categories = (value, fallback) => {
+    if (!Array.isArray(value)) return [...fallback];
+    const out = [];
+    for (const raw of value) {
+      if (typeof raw !== 'string') continue;
+      const item = raw.trim().toLowerCase();
+      if (!item || item.length > 64) continue;
+      if (!/^[a-z0-9!_.:-]+$/.test(item)) continue;
+      if (!out.includes(item)) out.push(item);
+      if (out.length >= 12) break;
+    }
+    return out;
+  };
+
+  return {
+    enabled: src.enabled === undefined ? base.enabled : Boolean(src.enabled),
+    geositePath: typeof src.geositePath === 'string' ? src.geositePath.trim().slice(0, 1024) : '',
+    directCategories: categories(src.directCategories, base.directCategories),
+    proxyCategories: categories(src.proxyCategories, base.proxyCategories),
+    directDomains: normalizeBypass(
+      Array.isArray(src.directDomains) ? src.directDomains : base.directDomains,
+      base.directDomains,
+    ),
+    proxyDomains: normalizeBypass(
+      Array.isArray(src.proxyDomains) ? src.proxyDomains : base.proxyDomains,
+      base.proxyDomains,
+    ),
+  };
 }
 
 function clamp(value, min, max, fallback) {
@@ -121,7 +167,7 @@ export function normalizeAppearance(input) {
 export function readSettings(store) {
   const raw = store.meta.get(KEY);
   if (!raw) {
-    return { ...DEFAULT_SETTINGS, ballAppearance: normalizeAppearance(DEFAULT_APPEARANCE) };
+    return { ...DEFAULT_SETTINGS, ballAppearance: normalizeAppearance(DEFAULT_APPEARANCE), routing: normalizeRouting(DEFAULT_ROUTING) };
   }
   try {
     const parsed = JSON.parse(raw);
@@ -132,9 +178,10 @@ export function readSettings(store) {
       dailyLimit: Number.isFinite(parsed.dailyLimit) && parsed.dailyLimit >= 0 ? parsed.dailyLimit : 0,
       monthlyLimit: Number.isFinite(parsed.monthlyLimit) && parsed.monthlyLimit >= 0 ? parsed.monthlyLimit : 0,
       bypassDomains: normalizeBypass(parsed.bypassDomains ?? DEFAULT_BYPASS),
+      routing: normalizeRouting(parsed.routing ?? DEFAULT_ROUTING),
     };
   } catch {
-    return { ...DEFAULT_SETTINGS, ballAppearance: normalizeAppearance(DEFAULT_APPEARANCE) };
+    return { ...DEFAULT_SETTINGS, ballAppearance: normalizeAppearance(DEFAULT_APPEARANCE), routing: normalizeRouting(DEFAULT_ROUTING) };
   }
 }
 
@@ -178,6 +225,11 @@ export function writeSettings(store, patch) {
     const n = Number(patch[key]);
     if (!Number.isFinite(n) || n < 0) throw new Error(`${key} 必须是非负数字（单位：字节）`);
     next[key] = Math.min(Math.round(n), MAX_LIMIT);
+  }
+
+  if (patch.routing !== undefined) {
+    if (patch.routing !== null && typeof patch.routing !== 'object') throw new Error('routing 必须是对象');
+    next.routing = normalizeRouting(patch.routing ?? DEFAULT_ROUTING);
   }
 
   store.meta.set(KEY, JSON.stringify(next));

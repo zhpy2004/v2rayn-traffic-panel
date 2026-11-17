@@ -53,6 +53,8 @@ const PRESETS = {
 };
 
 const state = {
+  routingStatus: null,
+  v2rayNRouting: '',
   usage: { today: 0, month: 0 },
   settings: { ballEnabled: true, ballOpacity: 0.92, ballAppearance: null, dailyLimit: 0, monthlyLimit: 0 },
 };
@@ -101,6 +103,74 @@ function fillBypassText() {
   $('#bypass').value = list.join('\n');
 }
 
+function fillRouting() {
+  const r = state.settings.routing ?? {};
+  $('#routing-enabled').checked = Boolean(r.enabled);
+  $('#routing-geosite').value = r.geositePath ?? '';
+  $('#routing-direct-cats').value = (r.directCategories ?? []).join(', ');
+  $('#routing-proxy-cats').value = (r.proxyCategories ?? []).join(', ');
+  $('#routing-direct-domains').value = (r.directDomains ?? []).join('\n');
+  $('#routing-proxy-domains').value = (r.proxyDomains ?? []).join('\n');
+  renderRoutingStatus(state.routingStatus);
+}
+
+function renderRoutingStatus(routing) {
+  const el = $('#routing-status');
+  if (!el) return;
+  if (!routing) {
+    el.textContent = '状态未知';
+    return;
+  }
+  const detected = state.routingStatus?.geositePath ?? '';
+  const geo = detected ? `geosite: ${detected}` : 'geosite: 未找到（只按域名列表分流）';
+  if (routing.error) {
+    el.textContent = `⚠ ${routing.error}`;
+    el.style.color = '#ffb3b3';
+    return;
+  }
+  el.style.color = '';
+  if (!routing.enabled) {
+    el.textContent = '未启用：所有流量交给 V2RayN';
+    return;
+  }
+  const d = routing.direct
+    ? `直连分类 ${routing.direct.categories.join('/')}（${routing.direct.size.toLocaleString()} 条）`
+    : '直连分类未加载';
+  const p = routing.proxy
+    ? ` · 强制代理 ${routing.proxy.categories.join('/')}（${routing.proxy.size.toLocaleString()} 条）`
+    : '';
+  const mode = state.v2rayNRouting;
+  const modeText = mode ? ` · V2RayN 路由：${mode}${/全局/.test(mode) ? '' : '（建议改为全局）'}` : '';
+  el.textContent = `${d}${p} · ${geo}${modeText}`;
+}
+
+function readRoutingForm() {
+  const split = (value, sep) => value.split(sep).map((s) => s.trim()).filter(Boolean);
+  return {
+    enabled: $('#routing-enabled').checked,
+    geositePath: $('#routing-geosite').value.trim(),
+    directCategories: split($('#routing-direct-cats').value, ','),
+    proxyCategories: split($('#routing-proxy-cats').value, ','),
+    directDomains: split($('#routing-direct-domains').value, /\r?\n/),
+    proxyDomains: split($('#routing-proxy-domains').value, /\r?\n/),
+  };
+}
+
+async function saveRouting(message) {
+  const res = await fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ routing: readRoutingForm() }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
+  state.settings = data.settings;
+  state.routingStatus = data.routing;
+  fillRouting();
+  if (message) setStatus(message, true, '#routing-msg');
+  return data;
+}
+
 function renderBars() {
   const dailyLimit = readInput('daily');
   const monthlyLimit = readInput('monthly');
@@ -132,6 +202,8 @@ async function load() {
   ]);
 
   state.settings = settingsRes.settings;
+  state.routingStatus = overviewRes.routing;
+  state.v2rayNRouting = overviewRes.status?.routingMode ?? '';
   state.usage.today = overviewRes.today.up + overviewRes.today.down;
   state.usage.month = overviewRes.month.up + overviewRes.month.down;
 
@@ -151,6 +223,7 @@ async function load() {
   $('#monthly-unit').value = monthly.unit;
 
   fillBypassText();
+  fillRouting();
   renderBars();
 }
 
@@ -267,6 +340,23 @@ $('#reset').addEventListener('click', async () => {
     await save({ dailyLimit: 0, monthlyLimit: 0 }, '已清零，不再提醒');
   } catch (err) {
     setStatus(`保存失败：${err.message}`, false);
+  }
+});
+
+$('#routing-enabled').addEventListener('change', async () => {
+  try {
+    await saveRouting('分流开关已更新');
+  } catch (err) {
+    $('#routing-enabled').checked = !$('#routing-enabled').checked;
+    setStatus(`分流保存失败：${err.message}`, false, '#routing-msg');
+  }
+});
+
+$('#routing-save').addEventListener('click', async () => {
+  try {
+    await saveRouting('分流规则已保存');
+  } catch (err) {
+    setStatus(`分流保存失败：${err.message}`, false, '#routing-msg');
   }
 });
 
