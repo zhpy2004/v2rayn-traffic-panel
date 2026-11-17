@@ -201,7 +201,7 @@ function renderRank() {
     return;
   }
   const max = Math.max(...rows.map((r) => r.up + r.down), 1);
-  const limit = rows.slice(0, 12);
+  const limit = rows.slice(0, 24);
   const total = rows.reduce((acc, r) => acc + r.up + r.down, 0);
   setText('rank-summary', `${rows.length} 个站点 · 合计 ${fmtBytes(total)}`);
 
@@ -305,7 +305,7 @@ function drawTrend() {
   const series = state.overview?.series ?? [];
   const { ctx, w, h } = fitCanvas(canvas);
   ctx.clearRect(0, 0, w, h);
-  const pad = { top: 14, right: 6, bottom: 22, left: 6 };
+  const pad = { top: 20, right: 12, bottom: 22, left: 48 };
   const innerW = w - pad.left - pad.right;
   const innerH = h - pad.top - pad.bottom;
   if (!series.length) return;
@@ -324,6 +324,14 @@ function drawTrend() {
     ctx.lineTo(w - pad.right, y + 0.5);
     ctx.stroke();
   }
+
+  // 纵轴：只标峰值与 0，避免堆太多字
+  ctx.fillStyle = '#5f6c85';
+  ctx.font = '10.5px "Cascadia Mono", Consolas, monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(fmtBytes(max), pad.left - 8, pad.top + 1);
+  ctx.fillText('0', pad.left - 8, pad.top + innerH);
 
   series.forEach((d, i) => {
     const x = pad.left + step * i + (step - barW) / 2;
@@ -432,6 +440,16 @@ function bindControls() {
   });
 
   window.addEventListener('resize', () => drawAll());
+
+  // 容器尺寸变化（窗口拉伸、列表滚动条出现/消失）时重绘图表
+  if (typeof ResizeObserver !== 'undefined') {
+    let frame = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => drawAll());
+    });
+    ro.observe(document.querySelector('.content'));
+  }
 }
 
 function connectLive() {

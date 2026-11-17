@@ -24,8 +24,8 @@
   </header>
 
   <main>
-    <section class="hero">
-      <article class="card big">
+    <section class="kpis">
+      <article class="card kpi wide">
         <div class="card-head">
           <span class="label">本月代理流量</span>
           <span class="chip" id="month-label">—</span>
@@ -36,10 +36,10 @@
           <span class="down">↓ <b id="month-down">0 B</b></span>
           <span class="muted"><b id="month-conns">0</b> 次连接</span>
         </div>
-        <div class="spark"><canvas id="month-spark" height="46"></canvas></div>
+        <div class="spark"><canvas id="month-spark" height="40"></canvas></div>
       </article>
 
-      <article class="card">
+      <article class="card kpi">
         <div class="card-head"><span class="label">今日</span><span class="chip" id="today-label">—</span></div>
         <div class="value" id="today-total">0 B</div>
         <div class="split small">
@@ -48,47 +48,64 @@
         </div>
       </article>
 
-      <article class="card">
+      <article class="card kpi">
         <div class="card-head"><span class="label">实时速率</span><span class="chip" id="live-dot">待机</span></div>
         <div class="value"><span class="down" id="live-down">0 B/s</span></div>
         <div class="split small">
           <span class="up">↑ <b id="live-up">0 B/s</b></span>
           <span class="muted"><b id="live-active">0</b> 活跃连接</span>
         </div>
-        <div class="spark"><canvas id="speed-spark" height="46"></canvas></div>
+        <div class="spark"><canvas id="speed-spark" height="34"></canvas></div>
       </article>
     </section>
 
     <section class="controls card">
-      <div class="control-row">
-        <div class="control-info">
-          <strong>计数中转</strong>
-          <span class="muted" id="relay-desc">127.0.0.1:10810 → 127.0.0.1:10808</span>
-        </div>
-        <button id="btn-relay" class="btn">启动</button>
+      <div class="control-info">
+        <strong>计数中转</strong>
+        <span class="muted" id="relay-desc">127.0.0.1:10810 → 127.0.0.1:10808</span>
       </div>
-      <div class="control-row">
-        <div class="control-info">
-          <strong>系统代理</strong>
-          <span class="muted" id="proxy-desc">读取中…</span>
-        </div>
+      <div class="control-info">
+        <strong>系统代理</strong>
+        <span class="muted" id="proxy-desc">读取中…</span>
+      </div>
+      <p class="hint" id="hint"></p>
+      <div class="control-actions">
+        <button id="btn-relay" class="btn">启动</button>
         <button id="btn-capture" class="btn primary">接管系统代理</button>
         <button id="btn-restore" class="btn ghost">还原</button>
       </div>
-      <p class="hint" id="hint">V2RayN 的系统代理开关会覆盖这里的设置。建议在 V2RayN 里选「不改变系统代理」，由本面板接管。</p>
     </section>
 
-    <section class="grid">
-      <article class="card chart-card">
-        <div class="card-head">
-          <span class="label">近 30 天流量</span>
-          <div class="legend"><span class="dot up"></span>上行<span class="dot down"></span>下行</div>
-        </div>
-        <div class="chart-wrap">
-          <canvas id="trend" height="220"></canvas>
-          <div class="tooltip" id="trend-tip" hidden></div>
-        </div>
-      </article>
+    <section class="content">
+      <div class="col-left">
+        <article class="card chart-card">
+          <div class="card-head">
+            <span class="label">近 30 天流量</span>
+            <div class="legend"><span class="dot up"></span>上行<span class="dot down"></span>下行</div>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="trend"></canvas>
+            <div class="tooltip" id="trend-tip" hidden></div>
+          </div>
+        </article>
+
+        <article class="card table-card">
+          <div class="card-head">
+            <span class="label">最近连接</span>
+            <span class="muted tiny">新连接实时出现在最上面</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>时间</th><th>站点</th><th>协议</th><th class="num">上行</th><th class="num">下行</th><th class="num">时长</th></tr>
+              </thead>
+              <tbody id="recent-body">
+                <tr class="empty"><td colspan="6">暂无数据</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </div>
 
       <article class="card rank-card">
         <div class="card-head">
@@ -100,27 +117,10 @@
         </div>
         <div class="rank-switch">
           <label><input type="checkbox" id="group-domain" checked /> 按域名合并</label>
-          <span class="muted" id="rank-summary"></span>
+          <span class="muted tiny" id="rank-summary"></span>
         </div>
         <ol class="rank-list" id="rank-list"></ol>
       </article>
-    </section>
-
-    <section class="card table-card">
-      <div class="card-head">
-        <span class="label">最近连接</span>
-        <span class="muted">新连接实时出现在最上面</span>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>时间</th><th>站点</th><th>协议</th><th class="num">上行</th><th class="num">下行</th><th class="num">时长</th></tr>
-          </thead>
-          <tbody id="recent-body">
-            <tr class="empty"><td colspan="6">暂无数据</td></tr>
-          </tbody>
-        </table>
-      </div>
     </section>
   </main>
 
