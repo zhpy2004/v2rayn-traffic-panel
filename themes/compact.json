@@ -1,0 +1,15 @@
+{
+  "name": "compact",
+  "size": 66,
+  "shape": "circle",
+  "opacity": 0.92,
+  "edgeSnap": true,
+  "nubSize": 18,
+  "bg": "#121722",
+  "ring": { "enabled": true, "width": 3, "track": "#2a3346", "color": "#5b8cff", "alert": "#ff6b6b" },
+  "modules": [
+    { "type": "speed.down", "y": 0.36, "font": 11, "color": "#3fd6a2" },
+    { "type": "speed.up", "y": 0.56, "font": 8.5, "color": "#ff8f5c" },
+    { "type": "usage.today", "y": 0.73, "font": 8, "color": "#9fb0cc" }
+  ]
+}

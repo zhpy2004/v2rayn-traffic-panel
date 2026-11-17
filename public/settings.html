@@ -34,6 +34,18 @@
     .actions { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--line); }
     #save-status { font-size: 12px; }
     .footnote { font-size: 11.5px; color: #5f6c85; margin: 4px 2px 0; }
+    .footnote code, #appearance { font-family: "Cascadia Mono", Consolas, monospace; }
+    .opacity-row { display: flex; align-items: center; gap: 12px; margin: 14px 0 12px; }
+    .opacity-row label { font-size: 12.5px; color: var(--muted); width: 58px; }
+    .opacity-row input[type=range] { flex: 1 1 auto; accent-color: var(--accent); }
+    .opacity-value { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; color: var(--muted); width: 44px; text-align: right; }
+    #appearance {
+      width: 100%; background: #0d1220; color: #cfe0ff; border: 1px solid var(--line);
+      border-radius: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.5; resize: vertical;
+    }
+    #appearance:focus { outline: 1px solid rgba(91,140,255,.6); }
+    .appearance-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+    #appearance-status { font-size: 12px; }
   </style>
 </head>
 <body>
@@ -60,6 +72,32 @@
           <span></span>
         </label>
       </div>
+    </section>
+
+    <section class="card setting-card">
+      <h2>悬浮球外观</h2>
+      <p class="muted">外观是一份 JSON 配置：尺寸、形状、配色、显示哪些模块都可以改。改完点「导入配置」立即生效。</p>
+
+      <div class="opacity-row">
+        <label for="opacity">透明度</label>
+        <input type="range" id="opacity" min="0.2" max="1" step="0.02" value="0.92" />
+        <span class="opacity-value" id="opacity-value">92%</span>
+      </div>
+
+      <textarea id="appearance" spellcheck="false" rows="12"></textarea>
+
+      <div class="appearance-actions">
+        <button id="apply" class="btn primary">导入配置</button>
+        <button id="export" class="btn">导出当前</button>
+        <button id="default" class="btn ghost">恢复默认</button>
+        <button id="preset-compact" class="btn ghost">预设：紧凑</button>
+        <button id="preset-pill" class="btn ghost">预设：胶囊</button>
+        <span id="appearance-status" class="muted"></span>
+      </div>
+      <p class="footnote">
+        模块类型：<code>speed.down</code> <code>speed.up</code> <code>usage.today</code> <code>usage.month</code> <code>limit.percent</code>；
+        <code>y</code> 是垂直位置（0~1），<code>font</code> 是字号（像素）。示例配置见仓库 <code>themes/</code> 目录。
+      </p>
     </section>
 
     <section class="card setting-card">

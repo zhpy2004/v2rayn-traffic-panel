@@ -1,0 +1,14 @@
+{
+  "name": "pill",
+  "size": 44,
+  "shape": "pill",
+  "opacity": 0.9,
+  "edgeSnap": true,
+  "nubSize": 14,
+  "bg": "#121722",
+  "ring": { "enabled": true, "width": 2, "track": "#2a3346", "color": "#5b8cff", "alert": "#ff6b6b" },
+  "modules": [
+    { "type": "speed.down", "y": 0.34, "font": 10, "color": "#3fd6a2" },
+    { "type": "usage.today", "y": 0.68, "font": 8, "color": "#9fb0cc" }
+  ]
+}

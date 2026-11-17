@@ -1,0 +1,15 @@
+{
+  "name": "minimal",
+  "size": 96,
+  "shape": "circle",
+  "opacity": 0.78,
+  "edgeSnap": true,
+  "nubSize": 22,
+  "bg": "#0d1220",
+  "ring": { "enabled": true, "width": 4, "track": "#1b2436", "color": "#3fd6a2", "alert": "#ff6b6b" },
+  "modules": [
+    { "type": "speed.down", "y": 0.4, "font": 14, "color": "#3fd6a2" },
+    { "type": "usage.today", "y": 0.68, "font": 9, "color": "#9fb0cc" },
+    { "type": "limit.percent", "y": 0.84, "font": 8, "color": "#5b8cff" }
+  ]
+}
