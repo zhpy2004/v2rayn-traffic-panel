@@ -112,8 +112,10 @@ function Update-Status {
 function Open-AppWindow {
     $edge = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
     if (-not (Test-Path $edge)) { $edge = 'C:\Program Files\Microsoft\Edge\Application\msedge.exe' }
+    # 专用 profile：不加载任何浏览器扩展，面板页面不会被注入悬浮球/拦截脚本
+    $profileDir = Join-Path $env:LOCALAPPDATA 'v2rayn-traffic\panel-profile'
     if (Test-Path $edge) {
-        Start-Process -FilePath $edge -ArgumentList "--app=$panelUrl --window-size=1280,900"
+        Start-Process -FilePath $edge -ArgumentList "--app=$panelUrl --user-data-dir=`"$profileDir`" --no-first-run --no-default-browser-check --window-size=1280,900"
     } else {
         Start-Process $panelUrl
     }
