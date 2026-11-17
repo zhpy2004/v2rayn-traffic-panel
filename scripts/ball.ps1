@@ -117,7 +117,15 @@ function Apply-Appearance($settings) {
     }
 
     $script:appliedKey = Get-AppearanceKey $settings
-    if ($script:edge -and $script:collapsed) { Set-BallPosition }
+    if ($script:edge -and $script:collapsed) {
+        Set-BallPosition
+    } elseif (-not $script:edge) {
+        # 尺寸变化后确保窗口仍然完整落在屏幕内
+        $sc = Get-Screen
+        $x = [Math]::Min([Math]::Max($form.Left, $sc.Left), [Math]::Max($sc.Left, $sc.Right - $form.Width))
+        $y = [Math]::Min([Math]::Max($form.Top, $sc.Top), [Math]::Max($sc.Top, $sc.Bottom - $form.Height))
+        $form.Location = New-Object System.Drawing.Point($x, $y)
+    }
     $form.Invalidate()
 }
 
@@ -294,10 +302,11 @@ $form.Add_MouseUp({
     param($sender, $e)
     if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left -and $script:dragging) {
         $script:dragging = $false
-        Snap-ToEdge
+        # 先记住「展开状态」的位置，再吸附；避免下次启动时停在半隐藏的位置
         try {
             @{ x = $sender.Location.X; y = $sender.Location.Y } | ConvertTo-Json | Set-Content -Path $posFile -Encoding UTF8
         } catch { }
+        Snap-ToEdge
     }
 })
 
