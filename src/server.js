@@ -15,6 +15,7 @@ import {
   readSystemProxy,
   captureSystemProxy,
   restoreSystemProxy,
+  updateProxyOverride,
   probeUpstream,
   isV2RayNRunning,
 } from './systemproxy.js';
@@ -228,6 +229,10 @@ const server = http.createServer(async (req, res) => {  const url = new URL(req.
         // 立即生效，不必等看护进程下一轮检查
         if (settings.ballEnabled) startBall();
         else stopBall();
+        // 直连例外变了就重建系统代理的跳过列表（不改 ProxyServer）
+        if (body.bypassDomains !== undefined && store.meta.get('proxy.original')) {
+          await updateProxyOverride(store, settings.bypassDomains).catch(() => {});
+        }
         broadcast('settings', settings);
         return json(res, { ok: true, settings });
       } catch (err) {
@@ -283,7 +288,7 @@ const server = http.createServer(async (req, res) => {  const url = new URL(req.
       const body = await readBody(req);
       if (body.action === 'capture') {
         if (!relay.running) await relay.start();
-        const result = await captureSystemProxy(store, config.relayPort);
+        const result = await captureSystemProxy(store, config.relayPort, readSettings(store).bypassDomains);
         broadcast('status', { proxy: 'captured' });
         return json(res, { ok: true, ...result });
       }
@@ -330,7 +335,7 @@ async function main() {
       // 等 V2RayN 自己先把系统代理写好，再接管，避免刚起来就被它覆盖
       setTimeout(async () => {
         try {
-          await captureSystemProxy(store, config.relayPort);
+          await captureSystemProxy(store, config.relayPort, readSettings(store).bypassDomains);
           console.log('已自动接管系统代理（面板退出时还原）');
         } catch (err) {
           console.error(`[proxy] 自动接管失败：${err.message}`);
@@ -360,7 +365,7 @@ function startProxyGuard() {
     try {
       const proxy = await readSystemProxy();
       if (proxy.enabled && proxy.server === upstream) {
-        await captureSystemProxy(store, config.relayPort);
+        await captureSystemProxy(store, config.relayPort, readSettings(store).bypassDomains);
         console.log('[guard] 系统代理被改回 V2RayN，已重新接管');
       }
     } catch {

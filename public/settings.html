@@ -43,11 +43,11 @@
     .opacity-row label { font-size: 12.5px; color: var(--muted); width: 58px; }
     .opacity-row input[type=range] { flex: 1 1 auto; accent-color: var(--accent); }
     .opacity-value { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; color: var(--muted); width: 44px; text-align: right; }
-    #appearance {
+    #appearance, #bypass {
       width: 100%; background: #0d1220; color: #cfe0ff; border: 1px solid var(--line);
       border-radius: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.5; resize: vertical;
     }
-    #appearance:focus { outline: 1px solid rgba(91,140,255,.6); }
+    #appearance:focus, #bypass:focus { outline: 1px solid rgba(91,140,255,.6); }
     .appearance-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
     #appearance-status { font-size: 12px; }
   </style>
@@ -129,6 +129,24 @@
         <button id="reset" class="btn ghost">清零上限</button>
         <span id="save-status" class="muted"></span>
       </div>
+    </section>
+
+    <section class="card setting-card">
+      <h2>直连例外（不走代理）</h2>
+      <p class="muted">
+        每行一个域名，支持 <code>*.example.com</code> 通配。保存后写进系统代理的跳过列表：
+        这些域名直连，<strong>不经过面板、也不消耗节点流量</strong>。
+      </p>
+      <textarea id="bypass" spellcheck="false" rows="8"></textarea>
+      <div class="appearance-actions">
+        <button id="bypass-save" class="btn primary">保存例外</button>
+        <button id="bypass-default" class="btn ghost">恢复默认（微软系）</button>
+        <span id="bypass-status" class="muted"></span>
+      </div>
+      <p class="footnote">
+        默认已包含微软系域名（Edge 更新走 <code>*.microsoft.com</code> 的 delivery CDN、遥测、Bing/资讯流），
+        国内直连即可，省下的正好是每天那 100 MB+。
+      </p>
     </section>
 
     <p class="footnote">

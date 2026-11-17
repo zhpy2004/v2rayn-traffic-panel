@@ -3,6 +3,22 @@ const $ = (sel) => document.querySelector(sel);
 const MB = 1024 ** 2;
 const GB = 1024 ** 3;
 
+const DEFAULT_BYPASS = [
+  'microsoft.com',
+  '*.microsoft.com',
+  '*.windowsupdate.com',
+  '*.windows.com',
+  '*.msn.com',
+  '*.bing.com',
+  '*.live.com',
+  '*.office.com',
+  '*.skype.com',
+  '*.msftconnecttest.com',
+  '*.msftncsi.com',
+  '*.msedge.net',
+  '*.azureedge.net',
+];
+
 const PRESETS = {
   compact: {
     name: 'compact',
@@ -79,6 +95,11 @@ function fillAppearanceText() {
   $('#appearance').value = JSON.stringify(state.settings.ballAppearance, null, 2);
 }
 
+function fillBypassText() {
+  const list = Array.isArray(state.settings.bypassDomains) ? state.settings.bypassDomains : DEFAULT_BYPASS;
+  $('#bypass').value = list.join('\n');
+}
+
 function renderBars() {
   const dailyLimit = readInput('daily');
   const monthlyLimit = readInput('monthly');
@@ -128,6 +149,7 @@ async function load() {
   $('#monthly-value').value = monthly.value;
   $('#monthly-unit').value = monthly.unit;
 
+  fillBypassText();
   renderBars();
 }
 
@@ -244,6 +266,28 @@ $('#reset').addEventListener('click', async () => {
     await save({ dailyLimit: 0, monthlyLimit: 0 }, '已清零，不再提醒');
   } catch (err) {
     setStatus(`保存失败：${err.message}`, false);
+  }
+});
+
+$('#bypass-save').addEventListener('click', async () => {
+  const list = $('#bypass').value
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  try {
+    await save({ bypassDomains: list }, '直连例外已保存，立即生效', '#bypass-status');
+    fillBypassText();
+  } catch (err) {
+    setStatus(`保存失败：${err.message}`, false, '#bypass-status');
+  }
+});
+
+$('#bypass-default').addEventListener('click', async () => {
+  try {
+    await save({ bypassDomains: DEFAULT_BYPASS }, '已恢复默认例外（微软系）', '#bypass-status');
+    fillBypassText();
+  } catch (err) {
+    setStatus(`恢复失败：${err.message}`, false, '#bypass-status');
   }
 });
 

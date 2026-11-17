@@ -20,17 +20,54 @@ export const DEFAULT_APPEARANCE = {
 
 export const MODULE_TYPES = ['speed.down', 'speed.up', 'usage.today', 'usage.month', 'limit.percent'];
 
+/** 默认直连（不走系统代理）的域名：Edge 更新、遥测、资讯流等，国内直连即可 */
+export const DEFAULT_BYPASS = [
+  'microsoft.com',
+  '*.microsoft.com',
+  '*.windowsupdate.com',
+  '*.windows.com',
+  '*.msn.com',
+  '*.bing.com',
+  '*.live.com',
+  '*.office.com',
+  '*.skype.com',
+  '*.msftconnecttest.com',
+  '*.msftncsi.com',
+  '*.msedge.net',
+  '*.azureedge.net',
+];
+
 export const DEFAULT_SETTINGS = {
   ballEnabled: true,
   ballOpacity: 0.92,
   ballAppearance: DEFAULT_APPEARANCE,
   dailyLimit: 0,
   monthlyLimit: 0,
+  bypassDomains: DEFAULT_BYPASS,
 };
 
 const MAX_LIMIT = 10 * 1024 ** 4;
 const KEY = 'settings';
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const DOMAIN_RE = /^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
+
+/** 校验直连例外：去重、转小写、丢弃非法项 */
+export function normalizeBypass(input) {
+  if (!Array.isArray(input)) return [...DEFAULT_BYPASS];
+  const seen = new Set();
+  const out = [];
+  for (const raw of input) {
+    if (typeof raw !== 'string') continue;
+    const item = raw.trim().toLowerCase();
+    if (!item || item.length > 253) continue;
+    if (!DOMAIN_RE.test(item)) continue;
+    if (seen.has(item)) continue;
+    seen.add(item);
+    out.push(item);
+    if (out.length >= 60) break;
+  }
+  return out;
+}
 
 function clamp(value, min, max, fallback) {
   const n = Number(value);
@@ -93,6 +130,7 @@ export function readSettings(store) {
       ballAppearance: normalizeAppearance(parsed.ballAppearance),
       dailyLimit: Number.isFinite(parsed.dailyLimit) && parsed.dailyLimit >= 0 ? parsed.dailyLimit : 0,
       monthlyLimit: Number.isFinite(parsed.monthlyLimit) && parsed.monthlyLimit >= 0 ? parsed.monthlyLimit : 0,
+      bypassDomains: normalizeBypass(parsed.bypassDomains ?? DEFAULT_BYPASS),
     };
   } catch {
     return { ...DEFAULT_SETTINGS, ballAppearance: normalizeAppearance(DEFAULT_APPEARANCE) };
@@ -127,6 +165,11 @@ export function writeSettings(store, patch) {
       }
       next.ballAppearance = normalized;
     }
+  }
+
+  if (patch.bypassDomains !== undefined) {
+    if (!Array.isArray(patch.bypassDomains)) throw new Error('bypassDomains 必须是字符串数组');
+    next.bypassDomains = normalizeBypass(patch.bypassDomains);
   }
 
   for (const key of ['dailyLimit', 'monthlyLimit']) {

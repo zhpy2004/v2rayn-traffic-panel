@@ -98,19 +98,20 @@ export function readBackupFile() {
   }
 }
 
-function mergeOverride(existing) {
+function mergeOverride(existing, extra = []) {
   const parts = String(existing || '')
     .split(';')
     .map((s) => s.trim())
     .filter(Boolean);
-  for (const item of LOOPBACK_OVERRIDE) {
+  for (const item of [...LOOPBACK_OVERRIDE, ...extra]) {
+    if (!item) continue;
     if (!parts.some((p) => p.toLowerCase() === item.toLowerCase())) parts.push(item);
   }
   return parts.join(';');
 }
 
 /** 接管系统代理，原值存入 store.meta 并落盘备份 */
-export async function captureSystemProxy(store, relayPort) {
+export async function captureSystemProxy(store, relayPort, extraBypass = []) {
   const before = await readSystemProxy();
   const saved = JSON.stringify(before);
   store.meta.set('proxy.original', saved);
@@ -118,10 +119,28 @@ export async function captureSystemProxy(store, relayPort) {
 
   await regSet('ProxyServer', 'REG_SZ', `127.0.0.1:${relayPort}`);
   await regSet('ProxyEnable', 'REG_DWORD', 1);
-  await regSet('ProxyOverride', 'REG_SZ', mergeOverride(before.override));
+  await regSet('ProxyOverride', 'REG_SZ', mergeOverride(before.override, extraBypass));
   if (before.autoConfig) await regDelete('AutoConfigURL');
   await notifyWinINet();
   return { before, after: await readSystemProxy() };
+}
+
+/**
+ * 只重写系统代理的「跳过列表」，不动 ProxyServer / 备份。
+ * 以接管前的原始 override 为基准重建，这样从列表里删掉域名也能生效。
+ */
+export async function updateProxyOverride(store, extraBypass = []) {
+  const saved = store.meta.get('proxy.original');
+  let base = null;
+  try {
+    base = saved ? JSON.parse(saved).override : null;
+  } catch {
+    base = null;
+  }
+  if (base === null) base = (await readSystemProxy()).override;
+  await regSet('ProxyOverride', 'REG_SZ', mergeOverride(base, extraBypass));
+  await notifyWinINet();
+  return await readSystemProxy();
 }
 
 /** 按接管前记录的值还原 */
