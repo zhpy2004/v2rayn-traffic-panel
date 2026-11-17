@@ -163,6 +163,20 @@
         </label>
       </div>
 
+      <div class="setting-row" style="margin-top: 14px">
+        <div>
+          <strong>上游不可用时直连（fail-open）</strong>
+          <p class="muted">
+            V2RayN 没开时，面板的 10810 端口仍然可用（自动回退直连）。这样命令行/工具写死
+            <code>127.0.0.1:10810</code> 也不会因为代理没开而断网。
+          </p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="routing-failopen" />
+          <span></span>
+        </label>
+      </div>
+
       <div class="route-grid">
         <label for="routing-geosite">geosite.dat</label>
         <input type="text" id="routing-geosite" placeholder="留空自动查找 V2RayN 的 bin/geosite.dat" />

@@ -157,6 +157,35 @@ export async function restoreSystemProxy(store) {
   return { restored: true, proxy: await readSystemProxy() };
 }
 
+/**
+ * 用已保存的原值重新接管（幂等）：
+ * 已有备份时只改 ProxyServer/ProxyEnable/Override，不会覆盖备份。
+ */
+export async function applyCapture(store, relayPort, extraBypass = []) {
+  const saved = store.meta.get('proxy.original');
+  if (!saved) return captureSystemProxy(store, relayPort, extraBypass);
+  let before = null;
+  try {
+    before = JSON.parse(saved);
+  } catch {
+    before = null;
+  }
+  if (!before) return captureSystemProxy(store, relayPort, extraBypass);
+  await regSet('ProxyServer', 'REG_SZ', `127.0.0.1:${relayPort}`);
+  await regSet('ProxyEnable', 'REG_DWORD', 1);
+  await regSet('ProxyOverride', 'REG_SZ', mergeOverride(before.override, extraBypass));
+  if (before.autoConfig) await regDelete('AutoConfigURL');
+  await notifyWinINet();
+  return { applied: true, proxy: await readSystemProxy() };
+}
+
+/** 关闭系统代理但保留备份：代理软件退出时让系统直连，面板端口仍在监听 */
+export async function disableSystemProxy() {
+  await regSet('ProxyEnable', 'REG_DWORD', 0);
+  await notifyWinINet();
+  return { disabled: true, proxy: await readSystemProxy() };
+}
+
 /** 上游（V2RayN SOCKS 入站）是否可连 */
 export function probeUpstream({ host = config.upstreamHost, port = config.upstreamPort, timeout = 800 } = {}) {
   return new Promise((resolve) => {

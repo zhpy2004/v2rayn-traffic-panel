@@ -35,6 +35,7 @@ export const DEFAULT_BYPASS = [
 /** 面板内分流规则：面板自己决定直连还是交给 V2RayN（V2RayN 建议设全局） */
 export const DEFAULT_ROUTING = {
   enabled: true,
+  failOpen: true,
   geositePath: '',
   directCategories: ['cn', 'private'],
   proxyCategories: ['google'],
@@ -96,6 +97,7 @@ export function normalizeRouting(input) {
 
   return {
     enabled: src.enabled === undefined ? base.enabled : Boolean(src.enabled),
+    failOpen: src.failOpen === undefined ? base.failOpen : Boolean(src.failOpen),
     geositePath: typeof src.geositePath === 'string' ? src.geositePath.trim().slice(0, 1024) : '',
     directCategories: categories(src.directCategories, base.directCategories),
     proxyCategories: categories(src.proxyCategories, base.proxyCategories),

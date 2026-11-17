@@ -26,7 +26,7 @@ const trayVbs = join(root, 'scripts', 'tray-hidden.vbs');
 const PROC = process.env.TRAFFIC_WATCH_PROC || 'v2rayN.exe';
 const INTERVAL = Number(process.env.TRAFFIC_WATCH_INTERVAL || 2000);
 const PANEL_PORT = Number(process.env.TRAFFIC_PORT || 8787);
-const AUTO_CAPTURE = process.env.TRAFFIC_AUTO_CAPTURE !== '0';
+const AUTO_CAPTURE = process.env.TRAFFIC_AUTO_CAPTURE === '1';
 const SERVER = join(root, 'src', 'server.js');
 
 function log(message) {
@@ -126,22 +126,44 @@ async function stopPanel(reason) {
   }
 }
 
+/** 调用面板的代理接口：apply（接管）/ disable（关闭系统代理但保留端口） */
+async function setProxy(action, reason) {
+  try {
+    const res = await fetch(`http://127.0.0.1:${PANEL_PORT}/api/proxy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    log(`系统代理 ${action}：${reason}`);
+  } catch (err) {
+    log(`系统代理 ${action} 失败：${err.message}`);
+  }
+}
+
 async function tick(state) {
   const running = await isProcessRunning();
   const up = await probePanel();
 
-  if (running && !up) {
-    await startPanel();
-    return { ...state, running, up: true };
+  // 面板常驻：即使 V2RayN 没开，10810 也要在监听，命令行才能"永远指向它"
+  if (!up) {
+    const started = await startPanel();
+    if (started) {
+      if (running) await setProxy('apply', '面板已启动，接管系统代理');
+      else await setProxy('disable', '面板已启动，V2RayN 未运行，系统代理关闭');
+    }
+    return { running, up: true };
   }
-  if (!running && up) {
-    await stopPanel(`${PROC} 已退出`);
-    return { ...state, running, up: false };
+
+  // V2RayN 启动/退出时切换系统代理；面板和端口保持不动
+  if (running && state.running !== true) {
+    await setProxy('apply', 'V2RayN 已启动，接管系统代理');
+  } else if (!running && state.running === true) {
+    await setProxy('disable', 'V2RayN 已退出，系统改为直连（10810 仍可用）');
   }
-  if (!running && !up && state.running === true) {
-    log(`${PROC} 已退出，面板未运行`);
-  }
-  return { ...state, running, up };
+
+  return { running, up };
 }
 
 /** 托盘是否还活着（进程在不在） */
@@ -227,11 +249,12 @@ async function main() {
 
   log(`看护启动 | 目标进程=${PROC} | 面板端口=${PANEL_PORT} | 自动接管=${AUTO_CAPTURE}`);
   let state = { running: null, up: null };
-  // 先对齐一次当前状态，避免启动日志刷屏
+  // 先对齐一次当前状态：面板常驻，系统代理跟着 V2RayN 走
   const running = await isProcessRunning();
-  const up = await probePanel();
-  if (running && !up) await startPanel();
-  if (!running && up) await stopPanel('启动时对齐状态');
+  let up = await probePanel();
+  if (!up) up = await startPanel();
+  if (running) await setProxy('apply', '启动时对齐：V2RayN 在运行');
+  else await setProxy('disable', '启动时对齐：V2RayN 未运行');
   state = { running, up };
 
   ensureTray();

@@ -94,6 +94,11 @@ export class Router {
     return 'proxy';
   }
 
+  /** 上游不可用时是否允许回退直连 */
+  canFailOpen() {
+    return Boolean(this.settings?.failOpen);
+  }
+
   status() {
     return {
       enabled: Boolean(this.settings?.enabled),

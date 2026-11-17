@@ -19,6 +19,8 @@ import {
   captureSystemProxy,
   restoreSystemProxy,
   updateProxyOverride,
+  applyCapture,
+  disableSystemProxy,
   probeUpstream,
   isV2RayNRunning,
 } from './systemproxy.js';
@@ -31,6 +33,7 @@ const relay = new TrafficRelay({
   upstreamPort: config.upstreamPort,
   maxConnections: config.maxConnections,
   decideRoute: (host) => router.decide(host),
+  failOpen: () => router.canFailOpen(),
 });
 
 const runAsync = promisify(execFile);
@@ -348,7 +351,20 @@ const server = http.createServer(async (req, res) => {  const url = new URL(req.
         broadcast('status', { proxy: 'restored' });
         return json(res, { ok: true, ...result });
       }
-      return json(res, { ok: false, error: 'action 必须是 capture 或 restore' }, 400);
+      // 幂等接管：已有备份时只重写系统代理，不覆盖备份（看护进程在 V2RayN 重启后调用）
+      if (body.action === 'apply') {
+        if (!relay.running) await relay.start().catch(() => {});
+        const result = await applyCapture(store, config.relayPort, effectiveBypass(readSettings(store)));
+        broadcast('status', { proxy: 'captured' });
+        return json(res, { ok: true, ...result });
+      }
+      // 关闭系统代理但保留备份：代理软件退出时让系统直连，10810 端口继续可用
+      if (body.action === 'disable') {
+        const result = await disableSystemProxy();
+        broadcast('status', { proxy: 'disabled' });
+        return json(res, { ok: true, ...result });
+      }
+      return json(res, { ok: false, error: 'action 必须是 capture / restore / apply / disable' }, 400);
     }
 
     if (pathname === '/api/shutdown' && req.method === 'POST') {

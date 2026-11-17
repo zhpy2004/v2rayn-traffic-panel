@@ -106,6 +106,7 @@ function fillBypassText() {
 function fillRouting() {
   const r = state.settings.routing ?? {};
   $('#routing-enabled').checked = Boolean(r.enabled);
+  $('#routing-failopen').checked = r.failOpen !== false;
   $('#routing-geosite').value = r.geositePath ?? '';
   $('#routing-direct-cats').value = (r.directCategories ?? []).join(', ');
   $('#routing-proxy-cats').value = (r.proxyCategories ?? []).join(', ');
@@ -148,6 +149,7 @@ function readRoutingForm() {
   const split = (value, sep) => value.split(sep).map((s) => s.trim()).filter(Boolean);
   return {
     enabled: $('#routing-enabled').checked,
+    failOpen: $('#routing-failopen').checked,
     geositePath: $('#routing-geosite').value.trim(),
     directCategories: split($('#routing-direct-cats').value, ','),
     proxyCategories: split($('#routing-proxy-cats').value, ','),

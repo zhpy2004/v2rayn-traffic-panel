@@ -225,13 +225,14 @@ function relayPipe(src, dst, onBytes) {
 }
 
 export class TrafficRelay extends EventEmitter {
-  constructor({ port, upstreamHost, upstreamPort, maxConnections = 512, decideRoute }) {
+  constructor({ port, upstreamHost, upstreamPort, maxConnections = 512, decideRoute, failOpen }) {
     super();
     this.port = port;
     this.upstreamHost = upstreamHost;
     this.upstreamPort = upstreamPort;
     this.maxConnections = maxConnections;
     this.decideRoute = typeof decideRoute === 'function' ? decideRoute : () => 'proxy';
+    this.failOpen = typeof failOpen === 'function' ? failOpen : () => false;
     this.server = null;
     this.running = false;
     this.active = 0;
@@ -338,15 +339,24 @@ export class TrafficRelay extends EventEmitter {
             upstreamPort: this.upstreamPort,
           });
       } catch (err) {
-        if (route !== 'direct') throw err;
-        this.emit('debug', { message: `direct failed for ${hs.host}: ${err.message}; fallback to proxy` });
-        route = 'proxy';
-        upstream = await socksConnectUpstream({
-          host: hs.host,
-          port: hs.port,
-          upstreamHost: this.upstreamHost,
-          upstreamPort: this.upstreamPort,
-        });
+        if (route === 'direct') {
+          // 直连失败 → 退回代理
+          this.emit('debug', { message: `direct failed for ${hs.host}: ${err.message}; fallback to proxy` });
+          route = 'proxy';
+          upstream = await socksConnectUpstream({
+            host: hs.host,
+            port: hs.port,
+            upstreamHost: this.upstreamHost,
+            upstreamPort: this.upstreamPort,
+          });
+        } else if (this.failOpen()) {
+          // 上游不可用（比如 V2RayN 没开）→ 按设置回退直连，保证"代理关着也能上网"
+          this.emit('debug', { message: `upstream failed for ${hs.host}: ${err.message}; fail-open to direct` });
+          route = 'direct';
+          upstream = await directConnect(hs.host, hs.port);
+        } else {
+          throw err;
+        }
       }
       record.route = route;
       this.sockets.add(upstream);
