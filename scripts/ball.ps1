@@ -1,4 +1,4 @@
-﻿param([switch]$Test)
+﻿param([switch]$Test, [switch]$TestSnap)
 # 桌面悬浮球（可配置外观）：
 #   尺寸 / 形状 / 透明度 / 配色 / 显示模块 全部来自设置里的 ballAppearance；
 #   拖到屏幕边缘会自动吸附成一个小凸起，鼠标移上去展开。
@@ -19,11 +19,11 @@ function Write-BallLog([string]$message) {
     try { Add-Content -Path $logFile -Value "$(Get-Date -Format o) $message" -Encoding UTF8 } catch { }
 }
 
-if (-not $Test -and (Test-Path $pidFile)) {
+if (-not $Test -and -not $TestSnap -and (Test-Path $pidFile)) {
     $old = (Get-Content $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
     if ($old -and (Get-Process -Id $old -ErrorAction SilentlyContinue)) { exit 0 }
 }
-if (-not $Test) { Set-Content -Path $pidFile -Value $PID; Write-BallLog "ball started pid=$PID" }
+if (-not $Test -and -not $TestSnap) { Set-Content -Path $pidFile -Value $PID; Write-BallLog "ball started pid=$PID" }
 
 function Format-Bytes([double]$n) {
     if ($n -le 0) { return '0 B' }
@@ -48,6 +48,7 @@ $script:app = $null          # 当前外观配置
 $script:appliedKey = ''      # 外观指纹，变了就重建
 $script:edge = $null         # 'left' | 'right' | 'top' | 'bottom' | $null
 $script:collapsed = $false
+$script:collapsedAt = [datetime]::MinValue
 $script:collapseTimer = $null
 
 function Get-AppearanceKey($settings) {
@@ -165,13 +166,29 @@ function Set-BallPosition {
 function Snap-ToEdge {
     if (-not $script:app.edgeSnap) { $script:edge = $null; return }
     $sc = Get-Screen
-    $threshold = 16
+    $threshold = 40        # 窗口边缘离屏幕边缘多近算"贴边"
+    $cursorNear = 14       # 鼠标本身贴到屏幕边缘也算
+    $cursor = [System.Windows.Forms.Cursor]::Position
     $script:edge = $null
-    if ([Math]::Abs($form.Right - $sc.Right) -le $threshold) { $script:edge = 'right' }
-    elseif ([Math]::Abs($form.Left - $sc.Left) -le $threshold) { $script:edge = 'left' }
-    elseif ([Math]::Abs($form.Top - $sc.Top) -le $threshold) { $script:edge = 'top' }
-    elseif ([Math]::Abs($form.Bottom - $sc.Bottom) -le $threshold) { $script:edge = 'bottom' }
-    if ($script:edge) { $script:collapsed = $true; Set-BallPosition }
+
+    $nearRight = ([Math]::Abs($form.Right - $sc.Right) -le $threshold) -or ($cursor.X -ge ($sc.Right - $cursorNear))
+    $nearLeft = ([Math]::Abs($form.Left - $sc.Left) -le $threshold) -or ($cursor.X -le ($sc.Left + $cursorNear))
+    $nearTop = ([Math]::Abs($form.Top - $sc.Top) -le $threshold) -or ($cursor.Y -le ($sc.Top + $cursorNear))
+    $nearBottom = ([Math]::Abs($form.Bottom - $sc.Bottom) -le $threshold) -or ($cursor.Y -ge ($sc.Bottom - $cursorNear))
+
+    if ($nearRight) { $script:edge = 'right' }
+    elseif ($nearLeft) { $script:edge = 'left' }
+    elseif ($nearTop) { $script:edge = 'top' }
+    elseif ($nearBottom) { $script:edge = 'bottom' }
+
+    Write-BallLog ("snap check window={0},{1}-{2},{3} screen={4},{5}-{6},{7} cursor={8},{9} -> edge={10}" -f $form.Left, $form.Top, $form.Right, $form.Bottom, $sc.Left, $sc.Top, $sc.Right, $sc.Bottom, $cursor.X, $cursor.Y, $script:edge)
+
+    if ($script:edge) {
+        $script:collapsed = $true
+        $script:collapsedAt = Get-Date
+        Set-BallPosition
+        Write-BallLog ("collapsed edge={0} location={1},{2}" -f $script:edge, $form.Left, $form.Top)
+    }
 }
 
 function Expand-Ball {
@@ -179,6 +196,7 @@ function Expand-Ball {
     if ($script:edge -and $script:collapsed) {
         $script:collapsed = $false
         Set-BallPosition
+        Write-BallLog ("expanded edge={0} location={1},{2}" -f $script:edge, $form.Left, $form.Top)
     }
 }
 
@@ -277,6 +295,7 @@ $form.Add_Paint({
 # ---------------- 交互 ----------------
 $script:dragging = $false
 $script:dragOffset = $null
+$script:downLocation = $null
 
 $form.Add_MouseDown({
     param($sender, $e)
@@ -284,6 +303,7 @@ $form.Add_MouseDown({
         Expand-Ball
         $script:dragging = $true
         $script:dragOffset = $e.Location
+        $script:downLocation = $sender.Location
     }
 })
 
@@ -302,6 +322,12 @@ $form.Add_MouseUp({
     param($sender, $e)
     if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left -and $script:dragging) {
         $script:dragging = $false
+        $moved = $script:downLocation -and (
+            [Math]::Abs($sender.Location.X - $script:downLocation.X) -gt 3 -or
+            [Math]::Abs($sender.Location.Y - $script:downLocation.Y) -gt 3
+        )
+        # 只是点了一下（没拖动）就不吸附，避免点凸起时被立刻缩回去
+        if (-not $moved) { return }
         # 先记住「展开状态」的位置，再吸附；避免下次启动时停在半隐藏的位置
         try {
             @{ x = $sender.Location.X; y = $sender.Location.Y } | ConvertTo-Json | Set-Content -Path $posFile -Encoding UTF8
@@ -311,6 +337,8 @@ $form.Add_MouseUp({
 })
 
 $form.Add_MouseEnter({
+    # 刚吸附完的 800ms 内不展开，否则鼠标还停在凸起上会立刻弹回去，看起来像"没吸附"
+    if ($script:collapsed -and ((Get-Date) - $script:collapsedAt).TotalMilliseconds -lt 800) { return }
     Expand-Ball
 })
 
@@ -423,6 +451,18 @@ $timer.Start()
 
 if ($Test) {
     Write-Host ("TEST online={0} size={1}x{2} opacity={3} modules={4}" -f $script:state.online, $form.Width, $form.Height, $form.Opacity, $script:app.modules.Count)
+    if (Test-Path $pidFile) { Remove-Item $pidFile -Force -ErrorAction SilentlyContinue }
+    exit 0
+}
+
+if ($TestSnap) {
+    $sc = Get-Screen
+    $form.Location = New-Object System.Drawing.Point(($sc.Right - $form.Width - 25), ($sc.Top + 200))
+    Write-Host ("BEFORE right={0} screenRight={1} gap={2}" -f $form.Right, $sc.Right, ($sc.Right - $form.Right))
+    Snap-ToEdge
+    Write-Host ("AFTER_SNAP edge={0} collapsed={1} left={2} right={3} visible={4}" -f $script:edge, $script:collapsed, $form.Left, $form.Right, ($sc.Right - $form.Left))
+    Expand-Ball
+    Write-Host ("AFTER_EXPAND collapsed={0} left={1} right={2} gap={3}" -f $script:collapsed, $form.Left, $form.Right, ($sc.Right - $form.Right))
     if (Test-Path $pidFile) { Remove-Item $pidFile -Force -ErrorAction SilentlyContinue }
     exit 0
 }
