@@ -119,6 +119,17 @@ function renderStatus() {
     pointing ? 'ok' : status.proxy.captured ? 'warn' : '',
   );
 
+  const quotaPill = document.querySelector('.pill[data-role="quota"]');
+  if (quotaPill) {
+    if (o.alerts?.any) {
+      quotaPill.hidden = false;
+      quotaPill.className = 'pill bad';
+      quotaPill.innerHTML = `<i></i>${o.alerts.daily ? '今日超限' : '本月超限'}`;
+    } else {
+      quotaPill.hidden = true;
+    }
+  }
+
   $('#relay-desc').textContent = `${status.relay.target} → ${status.upstream.host}:${status.upstream.port}`;
   $('#proxy-desc').textContent = status.proxy.enabled
     ? `当前指向 ${status.proxy.server || '(空)'}${status.proxy.captured ? ' · 已备份原值' : ''}`

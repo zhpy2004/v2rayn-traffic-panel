@@ -9,6 +9,8 @@ import { join, extname, normalize, relative } from 'node:path';
 import { config } from './config.js';
 import { openStore, localDay, monthStart } from './store.js';
 import { TrafficRelay } from './relay.js';
+import { readSettings, writeSettings, computeAlerts } from './settings.js';
+import { startBall, stopBall } from './ballcontrol.js';
 import {
   readSystemProxy,
   captureSystemProxy,
@@ -61,7 +63,11 @@ relay.on('conn', (record) => {
   }
   broadcast('conn', record);
 });
-relay.on('tick', (tick) => broadcast('tick', tick));
+let lastTick = { up: 0, down: 0, active: 0 };
+relay.on('tick', (tick) => {
+  lastTick = tick;
+  broadcast('tick', tick);
+});
 relay.on('error', (err) => console.error('[relay]', err.message));
 relay.on('debug', (info) => {
   if (process.env.TRAFFIC_DEBUG) console.error('[relay:debug]', info);
@@ -131,6 +137,11 @@ async function buildOverview() {
     topMonth: store.top(month, 60),
     topToday: store.top(today, 60),
     recent: store.recent(40),
+    settings: readSettings(store),
+    alerts: computeAlerts(readSettings(store), {
+      monthTotal: monthTotals.up + monthTotals.down,
+      todayTotal: todayTotals.up + todayTotals.down,
+    }),
     db: relative(config.root, config.dbFile).replaceAll('\\', '/'),
   };
 }
@@ -185,6 +196,43 @@ const server = http.createServer(async (req, res) => {  const url = new URL(req.
   try {
     if (pathname === '/api/overview' && req.method === 'GET') {
       return json(res, await buildOverview());
+    }
+
+    // 悬浮球专用的轻量接口：只读 SQLite + 内存里的速率，不碰注册表/进程探测
+    if (pathname === '/api/ball' && req.method === 'GET') {
+      const settings = readSettings(store);
+      const month = store.totals(monthStart());
+      const today = store.totals(localDay());
+      const monthTotal = month.up + month.down;
+      const todayTotal = today.up + today.down;
+      return json(res, {
+        ok: true,
+        now: Date.now(),
+        speed: lastTick,
+        today: { up: today.up, down: today.down, total: todayTotal },
+        month: { up: month.up, down: month.down, total: monthTotal },
+        settings,
+        alerts: computeAlerts(settings, { monthTotal, todayTotal }),
+        relay: { running: relay.running },
+      });
+    }
+
+    if (pathname === '/api/settings' && req.method === 'GET') {
+      return json(res, { ok: true, settings: readSettings(store) });
+    }
+
+    if (pathname === '/api/settings' && req.method === 'POST') {
+      const body = await readBody(req);
+      try {
+        const settings = writeSettings(store, body);
+        // 立即生效，不必等看护进程下一轮检查
+        if (settings.ballEnabled) startBall();
+        else stopBall();
+        broadcast('settings', settings);
+        return json(res, { ok: true, settings });
+      } catch (err) {
+        return json(res, { ok: false, error: err.message }, 400);
+      }
     }
 
     if (pathname === '/api/live' && req.method === 'GET') {
@@ -272,6 +320,12 @@ async function main() {
     writeFileSync(pidFile, String(process.pid), 'utf8');
     console.log(`V2RayN 流量面板已启动: http://${config.bindHost}:${config.port}`);
     console.log(`计数中转: 127.0.0.1:${config.relayPort} -> ${config.upstreamHost}:${config.upstreamPort} (${relay.running ? '运行中' : '未运行'})`);
+    // 悬浮球开关开着就拉起（看护进程也会兜底）
+    try {
+      if (readSettings(store).ballEnabled) startBall();
+    } catch (err) {
+      console.error(`[ball] 启动失败：${err.message}`);
+    }
     if (process.env.TRAFFIC_AUTO_CAPTURE === '1') {
       // 等 V2RayN 自己先把系统代理写好，再接管，避免刚起来就被它覆盖
       setTimeout(async () => {

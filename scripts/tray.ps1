@@ -68,6 +68,8 @@ $notify.Visible = $true
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 $miOpen = $menu.Items.Add('打开面板（浏览器）')
 $miApp = $menu.Items.Add('独立窗口打开')
+$miSettings = $menu.Items.Add('设置…')
+$miBall = $menu.Items.Add('隐藏悬浮球')
 $miStatus = $menu.Items.Add('状态：读取中…')
 $miStatus.Enabled = $false
 [void]$menu.Items.Add('-')
@@ -98,6 +100,7 @@ function Update-Status {
         $notify.Text = $tip
         $notify.Icon = $iconOn
         $miStatus.Text = "本月 $(Format-Bytes $month) · 今日 $(Format-Bytes $today) · $($o.month.conns) 次"
+        if ($o.settings -and $o.settings.ballEnabled) { $miBall.Text = '隐藏悬浮球' } else { $miBall.Text = '显示悬浮球' }
         $miApp.Enabled = $true
         return $true
     } catch {
@@ -125,6 +128,18 @@ function Show-OfflineBalloon {
     $notify.ShowBalloonTip(4000, 'V2RayN 流量面板', '面板没在运行。先打开 V2RayN，看护进程会自动把它拉起来。', [System.Windows.Forms.ToolTipIcon]::Info)
 }
 
+function Open-Settings {
+    $edge = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
+    if (-not (Test-Path $edge)) { $edge = 'C:\Program Files\Microsoft\Edge\Application\msedge.exe' }
+    $profileDir = Join-Path $env:LOCALAPPDATA 'v2rayn-traffic\panel-profile'
+    $url = $panelUrl + 'settings.html'
+    if (Test-Path $edge) {
+        Start-Process -FilePath $edge -ArgumentList "--app=$url --user-data-dir=`"$profileDir`" --no-first-run --no-default-browser-check --window-size=900,720"
+    } else {
+        Start-Process $url
+    }
+}
+
 $miOpen.add_Click({
     if (-not (Update-Status)) { Show-OfflineBalloon; return }
     Start-Process $panelUrl
@@ -133,6 +148,24 @@ $miOpen.add_Click({
 $miApp.add_Click({
     if (-not (Update-Status)) { Show-OfflineBalloon; return }
     Open-AppWindow
+})
+
+$miSettings.add_Click({
+    if (-not (Update-Status)) { Show-OfflineBalloon; return }
+    Open-Settings
+})
+
+$miBall.add_Click({
+    if (-not (Update-Status)) { Show-OfflineBalloon; return }
+    try {
+        $cur = Invoke-RestMethod -Uri ($panelUrl + 'api/settings') -TimeoutSec 2
+        $next = -not [bool]$cur.settings.ballEnabled
+        $body = @{ ballEnabled = $next } | ConvertTo-Json -Compress
+        Invoke-RestMethod -Method Post -Uri ($panelUrl + 'api/settings') -ContentType 'application/json' -Body $body -TimeoutSec 3 | Out-Null
+        [void](Update-Status)
+    } catch {
+        $notify.ShowBalloonTip(4000, '悬浮球', '切换失败：' + $_.Exception.Message, [System.Windows.Forms.ToolTipIcon]::Warning)
+    }
 })
 
 $miData.add_Click({

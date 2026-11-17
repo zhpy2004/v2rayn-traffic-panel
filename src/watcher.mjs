@@ -11,6 +11,7 @@ import { spawn, execFile } from 'node:child_process';
 import { appendFileSync, mkdirSync, readFileSync, existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { startBall, stopBall, isBallAlive } from './ballcontrol.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = join(root, 'data');
@@ -175,6 +176,25 @@ function ensureTray() {
   startTray();
 }
 
+/** 悬浮球跟着设置走：开着且没跑就拉起，关了就停掉 */
+async function ensureBall() {
+  if (!(await probePanel(800))) return;
+  try {
+    const res = await fetch(`http://127.0.0.1:${PANEL_PORT}/api/ball`, { signal: AbortSignal.timeout(1500) });
+    const data = await res.json();
+    const enabled = Boolean(data?.settings?.ballEnabled);
+    if (enabled && !isBallAlive()) {
+      startBall();
+      log('拉起悬浮球');
+    } else if (!enabled && isBallAlive()) {
+      stopBall();
+      log('悬浮球开关已关闭，停止悬浮球');
+    }
+  } catch {
+    /* 面板重启期间忽略 */
+  }
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let stopping = false;
@@ -215,12 +235,16 @@ async function main() {
   state = { running, up };
 
   ensureTray();
+  await ensureBall();
 
   let ticks = 0;
   setInterval(async () => {
     if (stopping) return;
     ticks += 1;
-    if (ticks % 15 === 0) ensureTray();
+    if (ticks % 15 === 0) {
+      ensureTray();
+      await ensureBall();
+    }
     try {
       state = await tick(state);
     } catch (err) {

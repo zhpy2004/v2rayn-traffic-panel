@@ -16,6 +16,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 html, body { height: 100%; }
 
@@ -96,6 +97,8 @@ h1 { margin: 0; font-size: 15px; letter-spacing: 0.2px; font-weight: 650; }
 }
 .pill.ok { color: #c9f4e4; border-color: rgba(63, 214, 162, 0.35); }
 .pill.ok i { background: var(--down); box-shadow: 0 0 0 3px rgba(63, 214, 162, 0.18); }
+.pill-link { text-decoration: none; cursor: pointer; }
+.pill-link:hover { border-color: #33415c; color: var(--text); }
 .pill.warn { color: #ffe9b8; border-color: rgba(255, 199, 90, 0.35); }
 .pill.warn i { background: var(--warn); box-shadow: 0 0 0 3px rgba(255, 199, 90, 0.18); }
 .pill.bad { color: #ffd2d2; border-color: rgba(255, 107, 107, 0.35); }
