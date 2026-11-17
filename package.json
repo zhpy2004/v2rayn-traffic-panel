@@ -1,0 +1,34 @@
+{
+  "name": "v2rayn-traffic-panel",
+  "version": "1.0.0",
+  "description": "V2RayN 代理流量监控面板：按站点统计流量、月度总量、实时速率，带托盘图标与自动启停",
+  "type": "module",
+  "main": "src/server.js",
+  "license": "MIT",
+  "author": "zhpy2004",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhpy2004/v2rayn-traffic-panel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zhpy2004/v2rayn-traffic-panel/issues"
+  },
+  "homepage": "https://github.com/zhpy2004/v2rayn-traffic-panel#readme",
+  "keywords": [
+    "v2rayn",
+    "xray",
+    "proxy",
+    "traffic",
+    "bandwidth",
+    "monitor",
+    "windows",
+    "deepseek-harness"
+  ],
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "selftest": "node --disable-warning=ExperimentalWarning test/selftest.mjs"
+  }
+}

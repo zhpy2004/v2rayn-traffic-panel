@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>V2RayN 流量面板</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235b8cff'/%3E%3Cpath d='M8 21l5-6 4 3 7-8' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo"></span>
+      <div>
+        <h1>V2RayN 流量面板</h1>
+        <p class="sub" id="scope-hint">按站点统计代理流量 · 数据仅保存在本机</p>
+      </div>
+    </div>
+    <div class="pills" id="pills">
+      <span class="pill" data-role="relay"><i></i>中转</span>
+      <span class="pill" data-role="v2rayn"><i></i>V2RayN</span>
+      <span class="pill" data-role="proxy"><i></i>系统代理</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <article class="card big">
+        <div class="card-head">
+          <span class="label">本月代理流量</span>
+          <span class="chip" id="month-label">—</span>
+        </div>
+        <div class="big-value" id="month-total">0 B</div>
+        <div class="split">
+          <span class="up">↑ <b id="month-up">0 B</b></span>
+          <span class="down">↓ <b id="month-down">0 B</b></span>
+          <span class="muted"><b id="month-conns">0</b> 次连接</span>
+        </div>
+        <div class="spark"><canvas id="month-spark" height="46"></canvas></div>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><span class="label">今日</span><span class="chip" id="today-label">—</span></div>
+        <div class="value" id="today-total">0 B</div>
+        <div class="split small">
+          <span class="up">↑ <b id="today-up">0 B</b></span>
+          <span class="down">↓ <b id="today-down">0 B</b></span>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><span class="label">实时速率</span><span class="chip" id="live-dot">待机</span></div>
+        <div class="value"><span class="down" id="live-down">0 B/s</span></div>
+        <div class="split small">
+          <span class="up">↑ <b id="live-up">0 B/s</b></span>
+          <span class="muted"><b id="live-active">0</b> 活跃连接</span>
+        </div>
+        <div class="spark"><canvas id="speed-spark" height="46"></canvas></div>
+      </article>
+    </section>
+
+    <section class="controls card">
+      <div class="control-row">
+        <div class="control-info">
+          <strong>计数中转</strong>
+          <span class="muted" id="relay-desc">127.0.0.1:10810 → 127.0.0.1:10808</span>
+        </div>
+        <button id="btn-relay" class="btn">启动</button>
+      </div>
+      <div class="control-row">
+        <div class="control-info">
+          <strong>系统代理</strong>
+          <span class="muted" id="proxy-desc">读取中…</span>
+        </div>
+        <button id="btn-capture" class="btn primary">接管系统代理</button>
+        <button id="btn-restore" class="btn ghost">还原</button>
+      </div>
+      <p class="hint" id="hint">V2RayN 的系统代理开关会覆盖这里的设置。建议在 V2RayN 里选「不改变系统代理」，由本面板接管。</p>
+    </section>
+
+    <section class="grid">
+      <article class="card chart-card">
+        <div class="card-head">
+          <span class="label">近 30 天流量</span>
+          <div class="legend"><span class="dot up"></span>上行<span class="dot down"></span>下行</div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="trend" height="220"></canvas>
+          <div class="tooltip" id="trend-tip" hidden></div>
+        </div>
+      </article>
+
+      <article class="card rank-card">
+        <div class="card-head">
+          <span class="label">站点排行</span>
+          <div class="segmented" id="rank-period">
+            <button data-period="month" class="active">本月</button>
+            <button data-period="today">今日</button>
+          </div>
+        </div>
+        <div class="rank-switch">
+          <label><input type="checkbox" id="group-domain" checked /> 按域名合并</label>
+          <span class="muted" id="rank-summary"></span>
+        </div>
+        <ol class="rank-list" id="rank-list"></ol>
+      </article>
+    </section>
+
+    <section class="card table-card">
+      <div class="card-head">
+        <span class="label">最近连接</span>
+        <span class="muted">新连接实时出现在最上面</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>时间</th><th>站点</th><th>协议</th><th class="num">上行</th><th class="num">下行</th><th class="num">时长</th></tr>
+          </thead>
+          <tbody id="recent-body">
+            <tr class="empty"><td colspan="6">暂无数据</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span id="footer-scope">只统计经过本面板中转的流量；直接连 V2RayN 10808 的应用不计入。</span>
+    <span id="footer-db"></span>
+  </footer>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
