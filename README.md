@@ -40,7 +40,7 @@ V2RayN 本地入站 127.0.0.1:10808
 - **实时**：SSE 每秒推送速率与活跃连接，新连接实时插入
 - **悬浮球**：桌面常驻圆形小球，实时上下行速率 + 今日用量 + 今日额度进度环，可拖动
 - **上限提醒**：设置日/月额度，超额时悬浮球变红、面板顶部出现「超限」胶囊
-- **直连例外**：把微软系（Edge 更新、遥测、MSN）等域名写进系统代理跳过列表，直连且不计入统计
+- **直连例外**：只把「更新 + 网络探测」类域名写进系统代理跳过列表，登录/商店/Office 等一律走代理
 - **面板分流**：V2RayN 只当纯管道，面板按 geosite.dat 自己分流（国内直连/国外走节点），统计拆成代理与直连两本账
 - **设置页**：`/settings.html` 管理悬浮球开关与月/日上限
 - **一屏布局**：1280×900、1366×768、1920×1080 下都不用滚动即可看完（窗口过小才回退成可滚动）
@@ -194,28 +194,28 @@ $env:TRAFFIC_OPEN=1            # 启动后自动开浏览器
 ### 直连例外（不走代理）
 
 设置页 →「直连例外」：每行一个域名，支持 `*.example.com` 通配。保存后**立即**写进系统代理的跳过列表，
-这些域名直连——既不计入面板统计，也不消耗节点流量。默认已包含微软系：
+这些域名直连——既不计入面板统计，也不消耗节点流量。默认只保留「更新 + 网络探测」：
 
 ```
-microsoft.com
-*.microsoft.com          ← 覆盖 edge.microsoft.com、*.delivery.mp.microsoft.com
 *.windowsupdate.com
-*.windows.com
-*.msn.com
-cn.bing.com              ← 中国版 Bing，直连
-*.cn.bing.com
-*.live.com
-*.office.com
-*.skype.com
+*.delivery.mp.microsoft.com      ← Edge 更新包（Delivery Optimization）
+*.msedge.net
 *.msftconnecttest.com
 *.msftncsi.com
-*.msedge.net
-*.azureedge.net
 ```
 
-**为什么默认带微软系**：Edge 的自动更新走 `msedge.*.tlu.dl.delivery.mp.microsoft.com`（Delivery Optimization），
-一次更新 100 MB+，而且分片多线程并发。实测一天代理流量 327 MB 里有 173 MB（53%）是微软系，
-其中 154 MB 是 Edge 更新包。这些 CDN 在国内直连通常反而更快。
+**为什么只留这些**：它们纯后台、不带页面 Referer、也不会被第三方站点引用，直连没有隐私代价。
+而下面这些都会走代理：
+
+| 域名 | 为什么改成走代理 |
+|---|---|
+| `*.azureedge.net` | **共享 CDN**，很多第三方站点也在用；直连等于把你真实 IP 交给别人的 CDN 日志 |
+| `*.live.com` / `account.microsoft.com` | 登录相关，直连会让微软看到真实 IP 与访问时机 |
+| `*.office.com` / `*.skype.com` | 可能被网页引用 |
+| `*.msn.com` / `edge.microsoft.com` | 浏览器 UI 与扩展商店，不涉及更新 |
+
+> 实测一天代理流量 327 MB 里有 173 MB（53%）是微软系，其中 154 MB 是 Edge 更新包——
+> 这部分仍然直连，正常浏览的隐私面不受影响。
 
 **Bing 分两个**：国际版 www.bing.com 走代理；中国版 cn.bing.com 直连（世纪互联运营，国内访问本来就快）。
 
@@ -235,7 +235,7 @@ cn.bing.com              ← 中国版 Bing，直连
 ### 规则优先级
 
 1. **强制代理域名**（`proxyDomains`，默认 anthropic / claude / cursor）
-2. **直连域名**（`directDomains`，默认微软系：Edge 更新、遥测、MSN/资讯等）
+2. **直连域名**（`directDomains`，默认只有更新与网络探测：windowsupdate / delivery.mp.microsoft.com / msedge.net / msftconnecttest / msftncsi）
 3. **强制代理分类**（`proxyCategories`，默认 `google`）
 4. **直连分类**（`directCategories`，默认 `cn`、`private`）
 5. 都不命中 → 走代理

@@ -20,22 +20,16 @@ export const DEFAULT_APPEARANCE = {
 
 export const MODULE_TYPES = ['speed.down', 'speed.up', 'usage.today', 'usage.month', 'limit.percent'];
 
-/** 默认直连（不走系统代理）的域名：Edge 更新、遥测、资讯流等，国内直连即可 */
+/**
+ * 默认直连域名：只保留「更新 + 网络探测」，它们纯后台、不带页面 Referer、不会被第三方引用。
+ * 登录（live.com）、商店（edge.microsoft.com）、Office、Skype、MSN 一律走代理，避免真实 IP 暴露。
+ */
 export const DEFAULT_BYPASS = [
-  'microsoft.com',
-  '*.microsoft.com',
   '*.windowsupdate.com',
-  '*.windows.com',
-  '*.msn.com',
-  'cn.bing.com',
-  '*.cn.bing.com',
-  '*.live.com',
-  '*.office.com',
-  '*.skype.com',
+  '*.delivery.mp.microsoft.com',
+  '*.msedge.net',
   '*.msftconnecttest.com',
   '*.msftncsi.com',
-  '*.msedge.net',
-  '*.azureedge.net',
 ];
 
 /** 面板内分流规则：面板自己决定直连还是交给 V2RayN（V2RayN 建议设全局） */
