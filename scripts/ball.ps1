@@ -134,11 +134,36 @@ function Get-Screen() {
     return [System.Windows.Forms.Screen]::FromControl($form).WorkingArea
 }
 
-# 根据吸附状态设置位置
+# ---------------- 滑动动画 ----------------
+$script:animTarget = $null
+$animTimer = New-Object System.Windows.Forms.Timer
+$animTimer.Interval = 15
+$animTimer.add_Tick({
+    if (-not $script:animTarget) { $animTimer.Stop(); return }
+    $dx = $script:animTarget.X - $form.Left
+    $dy = $script:animTarget.Y - $form.Top
+    if ([Math]::Abs($dx) -le 2 -and [Math]::Abs($dy) -le 2) {
+        $form.Location = $script:animTarget
+        $script:animTarget = $null
+        $animTimer.Stop()
+        return
+    }
+    $nx = $form.Left + [int][Math]::Round($dx * 0.34)
+    $ny = $form.Top + [int][Math]::Round($dy * 0.34)
+    $form.Location = New-Object System.Drawing.Point($nx, $ny)
+})
+
+function Move-To([int]$x, [int]$y) {
+    $script:animTarget = New-Object System.Drawing.Point($x, $y)
+    if (-not $animTimer.Enabled) { $animTimer.Start() }
+}
+
+# 根据吸附状态设置位置（带缓动滑动，而不是瞬移）
 function Set-BallPosition {
     $sc = Get-Screen
-    $w = $form.Width
-    $h = $form.Height
+    # 尺寸直接由外观配置推导，避免窗口尚未显示时 $form.Width 不可靠
+    $w = if ($script:app.shape -eq 'pill') { [int]($script:app.size * 1.9) } else { [int]$script:app.size }
+    $h = [int]$script:app.size
     $nub = [int]$script:app.nubSize
 
     if (-not $script:edge) {
@@ -146,21 +171,26 @@ function Set-BallPosition {
         return
     }
 
+    $x = $form.Left
+    $y = $form.Top
+
     if ($script:collapsed) {
         switch ($script:edge) {
-            'right'  { $form.Location = New-Object System.Drawing.Point(($sc.Right - $nub), $form.Top) }
-            'left'   { $form.Location = New-Object System.Drawing.Point(($sc.Left - ($w - $nub)), $form.Top) }
-            'top'    { $form.Location = New-Object System.Drawing.Point($form.Left, ($sc.Top - ($h - $nub))) }
-            'bottom' { $form.Location = New-Object System.Drawing.Point($form.Left, ($sc.Bottom - $nub)) }
+            'right'  { $x = $sc.Right - $nub }
+            'left'   { $x = $sc.Left - ($w - $nub) }
+            'top'    { $y = $sc.Top - ($h - $nub) }
+            'bottom' { $y = $sc.Bottom - $nub }
         }
     } else {
         switch ($script:edge) {
-            'right'  { $form.Location = New-Object System.Drawing.Point(($sc.Right - $w - 2), $form.Top) }
-            'left'   { $form.Location = New-Object System.Drawing.Point(($sc.Left + 2), $form.Top) }
-            'top'    { $form.Location = New-Object System.Drawing.Point($form.Left, ($sc.Top + 2)) }
-            'bottom' { $form.Location = New-Object System.Drawing.Point($form.Left, ($sc.Bottom - $h - 2)) }
+            'right'  { $x = $sc.Right - $w - 2 }
+            'left'   { $x = $sc.Left + 2 }
+            'top'    { $y = $sc.Top + 2 }
+            'bottom' { $y = $sc.Bottom - $h - 2 }
         }
     }
+
+    Move-To $x $y
 }
 
 function Snap-ToEdge {
@@ -196,7 +226,7 @@ function Expand-Ball {
     if ($script:edge -and $script:collapsed) {
         $script:collapsed = $false
         Set-BallPosition
-        Write-BallLog ("expanded edge={0} location={1},{2}" -f $script:edge, $form.Left, $form.Top)
+        Write-BallLog ("expanded edge={0}" -f $script:edge)
     }
 }
 
@@ -310,6 +340,7 @@ $form.Add_MouseDown({
 $form.Add_MouseMove({
     param($sender, $e)
     if ($script:dragging -and $script:dragOffset) {
+        if ($animTimer.Enabled) { $animTimer.Stop(); $script:animTarget = $null }
         $nx = $sender.Location.X + ($e.X - $script:dragOffset.X)
         $ny = $sender.Location.Y + ($e.Y - $script:dragOffset.Y)
         $sender.Location = New-Object System.Drawing.Point($nx, $ny)
@@ -456,12 +487,25 @@ if ($Test) {
 }
 
 if ($TestSnap) {
+    # 动画靠 WinForms 计时器驱动，需要泵消息；单纯 sleep 不会动
+    function Pump([int]$ms) {
+        $end = (Get-Date).AddMilliseconds($ms)
+        while ((Get-Date) -lt $end) {
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 15
+        }
+    }
+
     $sc = Get-Screen
+    Write-Host ("SIZE form={0}x{1} appear={2} shape={3} screen={4},{5}-{6},{7}" -f $form.Width, $form.Height, $script:app.size, $script:app.shape, $sc.Left, $sc.Top, $sc.Right, $sc.Bottom)
     $form.Location = New-Object System.Drawing.Point(($sc.Right - $form.Width - 25), ($sc.Top + 200))
+    Pump 100
     Write-Host ("BEFORE right={0} screenRight={1} gap={2}" -f $form.Right, $sc.Right, ($sc.Right - $form.Right))
     Snap-ToEdge
+    Pump 700
     Write-Host ("AFTER_SNAP edge={0} collapsed={1} left={2} right={3} visible={4}" -f $script:edge, $script:collapsed, $form.Left, $form.Right, ($sc.Right - $form.Left))
     Expand-Ball
+    Pump 700
     Write-Host ("AFTER_EXPAND collapsed={0} left={1} right={2} gap={3}" -f $script:collapsed, $form.Left, $form.Right, ($sc.Right - $form.Right))
     if (Test-Path $pidFile) { Remove-Item $pidFile -Force -ErrorAction SilentlyContinue }
     exit 0
