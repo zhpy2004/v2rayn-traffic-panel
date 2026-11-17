@@ -201,6 +201,8 @@ microsoft.com
 *.windowsupdate.com
 *.windows.com
 *.msn.com
+cn.bing.com              ← 中国版 Bing，直连
+*.cn.bing.com
 *.live.com
 *.office.com
 *.skype.com
@@ -214,7 +216,7 @@ microsoft.com
 一次更新 100 MB+，而且分片多线程并发。实测一天代理流量 327 MB 里有 173 MB（53%）是微软系，
 其中 154 MB 是 Edge 更新包。这些 CDN 在国内直连通常反而更快。
 
-**Bing 搜索仍然走代理**（不在例外列表里），这样搜索结果和用词保持一致。
+**Bing 分两个**：国际版 www.bing.com 走代理；中国版 cn.bing.com 直连（世纪互联运营，国内访问本来就快）。
 
 > 例外只影响「读系统代理」的程序；TUN 模式或应用内手填代理的流量不受影响。
 
