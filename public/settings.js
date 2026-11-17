@@ -9,7 +9,6 @@ const DEFAULT_BYPASS = [
   '*.windowsupdate.com',
   '*.windows.com',
   '*.msn.com',
-  '*.bing.com',
   '*.live.com',
   '*.office.com',
   '*.skype.com',
