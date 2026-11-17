@@ -18,6 +18,9 @@ mkdirSync(dataDir, { recursive: true });
 const logFile = join(dataDir, 'watcher.log');
 const pidFile = join(dataDir, 'panel.pid');
 const watcherPidFile = join(dataDir, 'watcher.pid');
+const trayPidFile = join(dataDir, 'tray.pid');
+const trayOffMarker = join(dataDir, 'tray.off');
+const trayVbs = join(root, 'scripts', 'tray-hidden.vbs');
 
 const PROC = process.env.TRAFFIC_WATCH_PROC || 'v2rayN.exe';
 const INTERVAL = Number(process.env.TRAFFIC_WATCH_INTERVAL || 2000);
@@ -140,6 +143,38 @@ async function tick(state) {
   return { ...state, running, up };
 }
 
+/** 托盘是否还活着（进程在不在） */
+function isTrayAlive() {
+  const pid = readPanelPidFrom(trayPidFile);
+  return pid ? isAlive(pid) : false;
+}
+
+/** 拉起托盘图标（隐藏窗口） */
+function startTray() {
+  try {
+    const child = spawn('wscript.exe', [trayVbs], {
+      cwd: root,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    child.unref();
+    log('拉起托盘');
+  } catch (err) {
+    log(`托盘启动失败：${err.message}`);
+  }
+}
+
+/**
+ * 托盘守护：用户主动「退出托盘」会写 data/tray.off，此时不再拉起；
+ * 其它情况（崩溃、被杀）每 30 秒补一次。
+ */
+function ensureTray() {
+  if (existsSync(trayOffMarker)) return;
+  if (isTrayAlive()) return;
+  startTray();
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let stopping = false;
@@ -179,8 +214,13 @@ async function main() {
   if (!running && up) await stopPanel('启动时对齐状态');
   state = { running, up };
 
+  ensureTray();
+
+  let ticks = 0;
   setInterval(async () => {
     if (stopping) return;
+    ticks += 1;
+    if (ticks % 15 === 0) ensureTray();
     try {
       state = await tick(state);
     } catch (err) {

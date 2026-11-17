@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "WebRTC Leak Guard",
+  "version": "1.0.0",
+  "description": "强制 WebRTC 不使用非代理 UDP，避免代理环境下暴露真实公网 IP。",
+  "permissions": ["privacy", "storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "minimum_chrome_version": "100"
+}

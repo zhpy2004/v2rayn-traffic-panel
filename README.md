@@ -148,6 +148,23 @@ V2RayN 没启动/没连节点，或入站端口不是 10808（改 `TRAFFIC_UPSTR
 **Q：有连接但没数据？**
 浏览器里装了 SwitchyOmega 之类扩展且直连 10808 时不会经过面板；把扩展代理改成 10810 或关掉。
 
+**Q：托盘图标不见了 / 看护和面板一起消失了？**
+多半是被上一级进程（终端、脚本宿主、会话）连带回收了。双击 `start-watch.cmd` 重新拉起即可，
+它通过 `explorer.exe` 启动，会脱离当前终端/会话的进程树。检查是否在跑：
+
+```powershell
+Get-Content data\watcher.pid, data\tray.pid
+Get-NetTCPConnection -LocalPort 8787,10810 -State Listen
+Get-Content data\watcher.log -Tail 20
+```
+
+看护每 30 秒会检查一次托盘，托盘被误杀会自动补起来；只有你主动「退出托盘」时
+才会写 `data/tray.off`，看护见到这个标记就不再拉起（删掉该文件或重新登录可恢复）。
+
+**Q：重启电脑后没有自动启动？**
+`install-autostart.cmd` 注册的是当前用户的「启动」文件夹快捷方式，必须**重新登录/重启一次**才会生效。
+没重启前可以手动运行 `start-watch.cmd`。手动「退出托盘」也会让托盘在本次登录内不再自动出现。
+
 ## 目录结构
 
 ```

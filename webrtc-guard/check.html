@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebRTC 泄露自检</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; background: #0b0e14; color: #e7ecf6;
+         font-family: "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif; display: grid; place-items: center; }
+  .card { width: min(760px, 92vw); background: #121722; border: 1px solid #222c40; border-radius: 16px; padding: 28px 30px; box-shadow: 0 20px 50px rgba(0,0,0,.4); }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .sub { color: #8995ac; font-size: 13px; margin-bottom: 20px; }
+  .verdict { font-size: 22px; font-weight: 650; padding: 16px 18px; border-radius: 12px; margin-bottom: 18px; }
+  .ok { background: rgba(63,214,162,.12); border: 1px solid rgba(63,214,162,.4); color: #7ff0c8; }
+  .bad { background: rgba(255,107,107,.12); border: 1px solid rgba(255,107,107,.4); color: #ffb3b3; }
+  .waiting { background: rgba(91,140,255,.1); border: 1px solid rgba(91,140,255,.35); color: #cfdcff; }
+  ul { list-style: none; padding: 0; margin: 0 0 18px; font-family: Consolas, monospace; font-size: 12px; }
+  li { padding: 6px 10px; border-bottom: 1px solid #1a2333; color: #9fb0cc; word-break: break-all; }
+  li.hit { color: #ff9b9b; }
+  .note { color: #8995ac; font-size: 12.5px; line-height: 1.7; }
+  code { background: #0d1220; border: 1px solid #222c40; border-radius: 5px; padding: 1px 5px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>WebRTC 泄露自检</h1>
+  <div class="sub">检查浏览器是否会绕过代理、直接用 UDP 把你的真实公网 IP 报给 STUN 服务器。</div>
+  <div id="verdict" class="verdict waiting">正在收集 ICE 候选…（约 8 秒）</div>
+  <ul id="list"></ul>
+  <div class="note">
+    <b>没有检测到公网 IP</b> → 安全。<br>
+    <b>检测到 srflx + 你的真实 IP</b> → 仍在泄露，按 <code>install.cmd</code> 的步骤加载扩展后刷新本页。<br>
+    说明：<code>host</code> 候选是随机 mDNS 域名（如 <code>xxxx.local</code>），不泄露真实地址；
+    <code>srflx</code> 才是 STUN 看到的公网地址。
+  </div>
+</div>
+<script>
+  const verdict = document.getElementById('verdict');
+  const list = document.getElementById('list');
+  const found = [];
+
+  function render() {
+    list.innerHTML = found.map((c) => {
+      const isSrflx = c.includes(' srflx ');
+      return `<li class="${isSrflx ? 'hit' : ''}">${isSrflx ? '⚠ ' : ''}${c.replace(/</g, '&lt;')}</li>`;
+    }).join('');
+  }
+
+  function decide() {
+    const srflx = found.filter((c) => c.includes(' srflx '));
+    const publicIp = srflx
+      .map((c) => (c.match(/(\d{1,3}(?:\.\d{1,3}){3})/) || [])[1])
+      .filter(Boolean);
+    if (publicIp.length) {
+      verdict.className = 'verdict bad';
+      verdict.textContent = `❌ 仍在泄露：真实公网 IP ${publicIp[0]} 被 STUN 看到了`;
+    } else if (found.length === 0) {
+      verdict.className = 'verdict ok';
+      verdict.textContent = '✅ 没有产生任何直连 UDP 候选（防护已生效）';
+    } else {
+      verdict.className = 'verdict ok';
+      verdict.textContent = '✅ 未发现 srflx 公网候选（没有泄露真实 IP）';
+    }
+  }
+
+  try {
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.miwifi.com:3478' },
+        { urls: 'stun:stun.l.google.com:19302' }
+      ]
+    });
+    pc.createDataChannel('probe');
+    pc.onicecandidate = (e) => {
+      if (e.candidate) { found.push(e.candidate.candidate); render(); }
+      else { decide(); }
+    };
+    pc.createOffer().then((o) => pc.setLocalDescription(o)).catch((err) => {
+      verdict.className = 'verdict waiting';
+      verdict.textContent = '建连失败：' + err;
+    });
+    setTimeout(() => { decide(); }, 8000);
+  } catch (err) {
+    verdict.className = 'verdict waiting';
+    verdict.textContent = '浏览器不支持 RTCPeerConnection：' + err;
+  }
+</script>
+</body>
+</html>

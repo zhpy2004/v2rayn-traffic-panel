@@ -8,7 +8,17 @@ Add-Type -AssemblyName System.Drawing
 $root = Split-Path -Parent $PSScriptRoot
 $dataDir = Join-Path $root 'data'
 $pidFile = Join-Path $dataDir 'tray.pid'
+$offMarker = Join-Path $dataDir 'tray.off'
+$logFile = Join-Path $dataDir 'tray.log'
 $panelUrl = 'http://127.0.0.1:8787/'
+
+function Write-TrayLog([string]$message) {
+    try {
+        Add-Content -Path $logFile -Value "$(Get-Date -Format o) $message" -Encoding UTF8
+    } catch {
+        # 日志写不了不影响托盘
+    }
+}
 
 # ---- 单实例 ----
 if (-not $Test -and (Test-Path $pidFile)) {
@@ -21,6 +31,8 @@ if (-not $Test -and (Test-Path $pidFile)) {
 if (-not $Test) {
     New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
     Set-Content -Path $pidFile -Value $PID
+    if (Test-Path $offMarker) { Remove-Item $offMarker -Force -ErrorAction SilentlyContinue }
+    Write-TrayLog "tray started pid=$PID"
 }
 
 function New-TrayIcon([System.Drawing.Color]$color) {
@@ -130,6 +142,9 @@ $miQuit.add_Click({
     $notify.Visible = $false
     $notify.Dispose()
     if (Test-Path $pidFile) { Remove-Item $pidFile -Force -ErrorAction SilentlyContinue }
+    # 标记「用户主动退出」，看护进程看到后不会再拉起来
+    try { Set-Content -Path $offMarker -Value (Get-Date -Format o) -Encoding UTF8 } catch { }
+    Write-TrayLog 'tray quit by user'
     [System.Windows.Forms.Application]::ExitThread()
 })
 
