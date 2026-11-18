@@ -34,6 +34,7 @@ const relay = new TrafficRelay({
   maxConnections: config.maxConnections,
   decideRoute: (host) => router.decide(host),
   failOpen: () => router.canFailOpen(),
+  probeUpstream: () => probeUpstream({ timeout: 500 }),
 });
 
 const runAsync = promisify(execFile);

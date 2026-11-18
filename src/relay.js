@@ -8,7 +8,7 @@
 import net from 'node:net';
 import { EventEmitter } from 'node:events';
 
-const HANDSHAKE_TIMEOUT_MS = 15_000;
+const HANDSHAKE_TIMEOUT_MS = 35_000;
 const IDLE_TIMEOUT_MS = 300_000;
 
 /** 带缓冲的 socket 读取器：SOCKS/HTTP 握手期间按需读取，结束后把剩余字节交还。 */
@@ -124,7 +124,7 @@ function splitHostPort(target, defaultPort) {
 }
 
 /** 与上游 V2RayN SOCKS5 入站握手，返回已连通的 socket */
-function socksConnectUpstream({ host, port, upstreamHost, upstreamPort, timeoutMs = 10_000 }) {
+function socksConnectUpstream({ host, port, upstreamHost, upstreamPort, timeoutMs = 20_000 }) {
   return new Promise((resolve, reject) => {
     const sock = net.connect({ host: upstreamHost, port: upstreamPort });
     const reader = new SockReader(sock);
@@ -225,7 +225,7 @@ function relayPipe(src, dst, onBytes) {
 }
 
 export class TrafficRelay extends EventEmitter {
-  constructor({ port, upstreamHost, upstreamPort, maxConnections = 512, decideRoute, failOpen }) {
+  constructor({ port, upstreamHost, upstreamPort, maxConnections = 512, decideRoute, failOpen, probeUpstream }) {
     super();
     this.port = port;
     this.upstreamHost = upstreamHost;
@@ -233,6 +233,7 @@ export class TrafficRelay extends EventEmitter {
     this.maxConnections = maxConnections;
     this.decideRoute = typeof decideRoute === 'function' ? decideRoute : () => 'proxy';
     this.failOpen = typeof failOpen === 'function' ? failOpen : () => false;
+    this.probeUpstream = typeof probeUpstream === 'function' ? probeUpstream : async () => true;
     this.server = null;
     this.running = false;
     this.active = 0;
@@ -349,17 +350,23 @@ export class TrafficRelay extends EventEmitter {
             upstreamHost: this.upstreamHost,
             upstreamPort: this.upstreamPort,
           });
-        } else if (this.failOpen()) {
-          // 上游不可用（比如 V2RayN 没开）→ 按设置回退直连，保证"代理关着也能上网"
-          this.emit('debug', { message: `upstream failed for ${hs.host}: ${err.message}; fail-open to direct` });
+        } else {
+          // 只有确认上游真的不可用才回退直连；上游只是慢就不回退，否则「慢」会变成「卡死」
+          const upstreamAlive = this.failOpen() ? await this.probeUpstream() : true;
+          if (upstreamAlive) throw err;
+          this.emit('debug', { message: `upstream down for ${hs.host}: ${err.message}; fail-open to direct` });
           route = 'direct';
           upstream = await directConnect(hs.host, hs.port);
-        } else {
-          throw err;
         }
       }
       record.route = route;
       this.sockets.add(upstream);
+      upstream.setNoDelay(true);
+      if (process.env.TRAFFIC_DEBUG === '1') {
+        this.emit('debug', {
+          message: `conn ${hs.host}:${hs.port} route=${route} setup=${Date.now() - record.startedAt}ms`,
+        });
+      }
 
       // 连通后再回握手成功
       if (hs.kind === 'socks5') {
